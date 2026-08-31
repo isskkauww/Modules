@@ -1,4 +1,5 @@
--- This is a new version
+-- Official Creator By Footagesus
+-- This is modified version not original
 
 local cloneref = (cloneref or clonereference or function(instance)
 	return instance
@@ -83,7 +84,7 @@ local function ReadCacheEntry(url)
 	return cached
 end
 
-local function WriteCache(url, content, hash)
+local function WriteCache(url, content, remoteVersion)
 	if not FileSystemApiSupport then
 		return
 	end
@@ -92,7 +93,8 @@ local function WriteCache(url, content, hash)
 	local ok, encoded = pcall(function()
 		return HttpService:JSONEncode({
 			time = os.time(),
-			hash = hash,
+			gh = remoteVersion and remoteVersion.gh,
+			jsd = remoteVersion and remoteVersion.jsd,
 			data = content,
 		})
 	end)
@@ -101,7 +103,7 @@ local function WriteCache(url, content, hash)
 	end
 end
 
-local function Get(url, hash)
+local function Get(url, remoteVersion)
 	local Success, Result
 	if IsExploit() then
 		Success, Result = pcall(game.HttpGet, game, url)
@@ -117,7 +119,7 @@ local function Get(url, hash)
 	end
 
 	if Success and Result and Result ~= "" then
-		WriteCache(url, Result, hash)
+		WriteCache(url, Result, remoteVersion)
 		return Result
 	end
 
@@ -168,7 +170,7 @@ local function GetRemoteSHAs()
 	local shas = {}
 	for _, entry in ipairs(decoded.tree) do
 		if entry.type == "blob" then
-			shas["/" .. entry.path] = "gh:" .. entry.sha
+			shas["/" .. entry.path] = entry.sha
 		end
 	end
 	return shas
@@ -189,13 +191,32 @@ local function GetRemoteHashes()
 
 	local hashes = {}
 	for _, file in ipairs(decoded.files) do
-		hashes[file.name] = "jsd:" .. file.hash
+		hashes[file.name] = file.hash
 	end
 	return hashes
 end
 
 local function GetRemoteVersions()
-	return GetRemoteSHAs() or GetRemoteHashes() or {}
+	local ghShas = GetRemoteSHAs() or {}
+	local jsdHashes = GetRemoteHashes() or {}
+
+	local paths = {}
+	for path in pairs(ghShas) do
+		paths[path] = true
+	end
+	for path in pairs(jsdHashes) do
+		paths[path] = true
+	end
+
+	local versions = {}
+	for path in pairs(paths) do
+		versions[path] = {
+			gh = ghShas[path],
+			jsd = jsdHashes[path],
+		}
+	end
+
+	return versions
 end
 
 local remoteVersions = (IsExploit() and FileSystemApiSupport) and GetRemoteVersions() or {}
@@ -205,7 +226,11 @@ local function GetPack(path)
 	local cacheEntry = ReadCacheEntry(url)
 	local remoteVersion = remoteVersions["/" .. path]
 
-	if cacheEntry and remoteVersion and cacheEntry.hash == remoteVersion then
+	local isFresh = cacheEntry
+		and remoteVersion
+		and ((remoteVersion.gh and cacheEntry.gh == remoteVersion.gh) or (remoteVersion.jsd and cacheEntry.jsd == remoteVersion.jsd))
+
+	if isFresh then
 		return cacheEntry.data
 	end
 
