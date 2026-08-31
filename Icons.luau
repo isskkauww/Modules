@@ -27,7 +27,8 @@ local function HashString(str)
 end
 
 local function UrlToFileName(url)
-	local readableName = url:match("([^/]+)$") or "file"
+	local packName = url:match("/([%w_%-]+)/dist/Icons%.lua$")
+	local readableName = (packName and (packName .. ".lua")) or url:match("([^/]+)$") or "file"
 	readableName = readableName:gsub("[^%w%.%-]", "_")
 	return "IconsLibCache/" .. HashString(url) .. "_" .. readableName
 end
