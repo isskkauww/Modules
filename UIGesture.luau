@@ -13,6 +13,7 @@ export type UIGesture = {
 	MakeDraggable: (self: UIGesture, Main: GuiObject, Handle: GuiObject?) -> GestureHandle,
 	MakeResizeable: (self: UIGesture, Main: GuiObject, Handle: GuiObject?, MinSize: Vector2?, MaxSize: Vector2?) -> GestureHandle,
 	MakeSwipeable: (self: UIGesture, Main: GuiObject, Handle: GuiObject?, Callback: SwipeCallback?, Threshold: number?, MaxTime: number?) -> GestureHandle,
+	MakeRotatable: (self: UIGesture, Main: GuiObject, Handle: GuiObject?) -> GestureHandle,
 }
 
 local UIGesture = {} :: UIGesture
@@ -254,6 +255,77 @@ function UIGesture:MakeSwipeable(Main, Handle, Callback, Threshold, MaxTime)
 
 	function self:Disconnect()
 		swiping = false
+		ActiveInput = nil
+		for _, c in Conn do
+			c:Disconnect()
+		end
+	end
+
+	return self
+end
+
+function UIGesture:MakeRotatable(Main, Handle)
+	Main = Main or Handle
+	Handle = Handle or Main
+	assert(Main and Handle, "MakeRotatable: needs at least one GuiObject")
+
+	if not Handle.Active then
+		Handle.Active = true
+	end
+
+	local rotating = false
+	local ActiveInput, DragInput, StartAngle, StartRotation
+
+	local Conn = {}
+	local self = {}
+
+	local function GetAngle(inputPosition)
+		local center = Main.AbsolutePosition + Main.AbsoluteSize / 2
+		local delta = Vector2.new(inputPosition.X, inputPosition.Y) - center
+		return math.deg(math.atan2(delta.Y, delta.X))
+	end
+
+	Conn[1] = Handle.InputBegan:Connect(function(input)
+		if rotating then return end
+		if input.UserInputState ~= Enum.UserInputState.Begin then return end
+
+		if input.UserInputType == Enum.UserInputType.MouseButton1
+			or input.UserInputType == Enum.UserInputType.Touch then
+			rotating = true
+			ActiveInput = input
+			StartAngle = GetAngle(input.Position)
+			StartRotation = Main.Rotation
+
+			input.Changed:Connect(function()
+				if input ~= ActiveInput then return end
+
+				if input.UserInputState == Enum.UserInputState.End
+					or input.UserInputState == Enum.UserInputState.Cancel then
+					rotating = false
+					ActiveInput = nil
+					DragInput = nil
+				end
+			end)
+		end
+	end)
+
+	Conn[2] = Handle.InputChanged:Connect(function(input)
+		if input == ActiveInput
+			and (input.UserInputType == Enum.UserInputType.MouseMovement
+			or input.UserInputType == Enum.UserInputType.Touch) then
+			DragInput = input
+		end
+	end)
+
+	Conn[3] = UserInputService.InputChanged:Connect(function(input)
+		if rotating and input == DragInput then
+			local currentAngle = GetAngle(input.Position)
+			Main.Rotation = StartRotation + (currentAngle - StartAngle)
+		end
+	end)
+
+	function self:Disconnect()
+		rotating = false
 		ActiveInput = nil
 		for _, c in Conn do
 			c:Disconnect()
