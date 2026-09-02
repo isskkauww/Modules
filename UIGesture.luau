@@ -371,11 +371,14 @@ function UIGesture:MakeZoomable(Main, Handle, Content, MinScale, MaxScale, ZoomS
 		local desiredAbsX = center.X - newAbsSize.X / 2
 		local desiredAbsY = center.Y - newAbsSize.Y / 2
 
+		local anchor = Content.AnchorPoint
+		local sizeDelta = newAbsSize - baseAbsSize
+
 		Content.Position = UDim2.new(
 			basePos.X.Scale,
-			basePos.X.Offset + (desiredAbsX - baseAbsPos.X),
+			basePos.X.Offset + (desiredAbsX - baseAbsPos.X) + anchor.X * sizeDelta.X,
 			basePos.Y.Scale,
-			basePos.Y.Offset + (desiredAbsY - baseAbsPos.Y)
+			basePos.Y.Offset + (desiredAbsY - baseAbsPos.Y) + anchor.Y * sizeDelta.Y
 		)
 
 		ContentScale.Scale = clampedScale
