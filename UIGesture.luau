@@ -14,7 +14,7 @@ export type UIGesture = {
 	MakeResizeable: (self: UIGesture, Main: GuiObject, Handle: GuiObject?, MinSize: Vector2?, MaxSize: Vector2?) -> GestureHandle,
 	MakeSwipeable: (self: UIGesture, Main: GuiObject, Handle: GuiObject?, Callback: SwipeCallback?, Threshold: number?, MaxTime: number?) -> GestureHandle,
 	MakeRotatable: (self: UIGesture, Main: GuiObject, Handle: GuiObject?) -> GestureHandle,
-	MakeZoomable: (self: UIGesture, Main: GuiObject, Handle: GuiObject?, Content: GuiObject?, MinScale: number?, MaxScale: number?, ZoomStep: number?) -> GestureHandle,
+	MakeZoomable: (self: UIGesture, Main: GuiObject, Handle: GuiObject?, Content: GuiObject?, MinZoom: number?, MaxZoom: number?, ZoomStep: number?) -> GestureHandle,
 }
 
 local UIGesture = {} :: UIGesture
@@ -336,7 +336,7 @@ function UIGesture:MakeRotatable(Main, Handle)
 	return self
 end
 
-function UIGesture:MakeZoomable(Main, Handle, Content, MinScale, MaxScale, ZoomStep)
+function UIGesture:MakeZoomable(Main, Handle, Content, MinZoom, MaxZoom, ZoomStep)
 	Main = Main or Handle
 	Handle = Handle or Main
 	assert(Main and Handle, "MakeZoomable: needs at least one GuiObject")
@@ -346,14 +346,31 @@ function UIGesture:MakeZoomable(Main, Handle, Content, MinScale, MaxScale, ZoomS
 		Handle.Active = true
 	end
 
-	MinScale = MinScale or 0.5
-	MaxScale = MaxScale or 3
+	MinZoom = MinZoom or 0.3
+	MaxZoom = MaxZoom or 1
 	ZoomStep = ZoomStep or 0.1
 
 	local ContentScale = Content:FindFirstChildOfClass("UIScale")
 	if not ContentScale then
 		ContentScale = Instance.new("UIScale")
 		ContentScale.Parent = Content
+	end
+
+	local function GetFitScale()
+		local currentScale = ContentScale.Scale
+		if currentScale <= 0 then
+			currentScale = 1
+		end
+
+		local baseContentSize = Content.AbsoluteSize / currentScale
+		if baseContentSize.X <= 0 or baseContentSize.Y <= 0 then
+			return 1
+		end
+
+		return math.min(
+			Main.AbsoluteSize.X / baseContentSize.X,
+			Main.AbsoluteSize.Y / baseContentSize.Y
+		)
 	end
 
 	local pinching = false
@@ -363,7 +380,14 @@ function UIGesture:MakeZoomable(Main, Handle, Content, MinScale, MaxScale, ZoomS
 	local self = {}
 
 	local function ApplyZoom(factor, baseScale, baseAbsSize, basePos, baseAbsPos)
-		local clampedScale = math.clamp(baseScale * factor, MinScale, MaxScale)
+		local fitScale = GetFitScale()
+		local zoomInLimit = (MinZoom > 0) and MinZoom or 1
+		local zoomOutLimit = (MaxZoom > 0) and MaxZoom or 1
+
+		local minAllowedScale = fitScale / zoomOutLimit
+		local maxAllowedScale = fitScale / zoomInLimit
+
+		local clampedScale = math.clamp(baseScale * factor, minAllowedScale, maxAllowedScale)
 
 		local center = baseAbsPos + baseAbsSize / 2
 		local newAbsSize = baseAbsSize * (clampedScale / baseScale)
@@ -454,4 +478,3 @@ function UIGesture:MakeZoomable(Main, Handle, Content, MinScale, MaxScale, ZoomS
 end
 
 return UIGesture
-
