@@ -14,6 +14,7 @@ export type UIGesture = {
 	MakeResizeable: (self: UIGesture, Main: GuiObject, Handle: GuiObject?, MinSize: Vector2?, MaxSize: Vector2?) -> GestureHandle,
 	MakeSwipeable: (self: UIGesture, Main: GuiObject, Handle: GuiObject?, Callback: SwipeCallback?, Threshold: number?, MaxTime: number?) -> GestureHandle,
 	MakeRotatable: (self: UIGesture, Main: GuiObject, Handle: GuiObject?) -> GestureHandle,
+	MakeZoomable: (self: UIGesture, Main: GuiObject, Handle: GuiObject?, MinSize: Vector2?, MaxSize: Vector2?, ZoomStep: number?) -> GestureHandle,
 }
 
 local UIGesture = {} :: UIGesture
@@ -327,6 +328,121 @@ function UIGesture:MakeRotatable(Main, Handle)
 	function self:Disconnect()
 		rotating = false
 		ActiveInput = nil
+		for _, c in Conn do
+			c:Disconnect()
+		end
+	end
+
+	return self
+end
+
+function UIGesture:MakeZoomable(Main, Handle, MinSize, MaxSize, ZoomStep)
+	Main = Main or Handle
+	Handle = Handle or Main
+	assert(Main and Handle, "MakeZoomable: needs at least one GuiObject")
+
+	if not Handle.Active then
+		Handle.Active = true
+	end
+
+	MinSize = MinSize or Vector2.new(20, 20)
+	MaxSize = MaxSize or Vector2.new(math.huge, math.huge)
+	ZoomStep = ZoomStep or 0.1
+
+	local pinching = false
+	local TouchA, TouchB, StartDistance, StartSize, StartAbsSize, StartPos, StartAbsPos
+
+	local Conn = {}
+	local self = {}
+
+	local function ApplyScale(scale, baseSize, baseAbsSize, basePos, baseAbsPos)
+		local center = baseAbsPos + baseAbsSize / 2
+
+		local desiredAbsWidth = baseAbsSize.X * scale
+		local desiredAbsHeight = baseAbsSize.Y * scale
+
+		local clampedAbsWidth = math.clamp(desiredAbsWidth, MinSize.X, MaxSize.X)
+		local clampedAbsHeight = math.clamp(desiredAbsHeight, MinSize.Y, MaxSize.Y)
+
+		local desiredAbsX = center.X - clampedAbsWidth / 2
+		local desiredAbsY = center.Y - clampedAbsHeight / 2
+
+		Main.Size = UDim2.new(
+			baseSize.X.Scale,
+			baseSize.X.Offset + (clampedAbsWidth - baseAbsSize.X),
+			baseSize.Y.Scale,
+			baseSize.Y.Offset + (clampedAbsHeight - baseAbsSize.Y)
+		)
+
+		Main.Position = UDim2.new(
+			basePos.X.Scale,
+			basePos.X.Offset + (desiredAbsX - baseAbsPos.X),
+			basePos.Y.Scale,
+			basePos.Y.Offset + (desiredAbsY - baseAbsPos.Y)
+		)
+	end
+
+	local function EndTouch(input)
+		if input == TouchA then
+			TouchA = nil
+		elseif input == TouchB then
+			TouchB = nil
+		end
+		pinching = false
+	end
+
+	Conn[1] = Handle.InputBegan:Connect(function(input)
+		if input.UserInputType ~= Enum.UserInputType.Touch then return end
+		if input.UserInputState ~= Enum.UserInputState.Begin then return end
+
+		if not TouchA then
+			TouchA = input
+		elseif not TouchB then
+			TouchB = input
+		else
+			return
+		end
+
+		input.Changed:Connect(function()
+			if input.UserInputState == Enum.UserInputState.End
+				or input.UserInputState == Enum.UserInputState.Cancel then
+				EndTouch(input)
+			end
+		end)
+
+		if TouchA and TouchB then
+			pinching = true
+			StartDistance = (TouchA.Position - TouchB.Position).Magnitude
+			StartSize = Main.Size
+			StartAbsSize = Main.AbsoluteSize
+			StartPos = Main.Position
+			StartAbsPos = Main.AbsolutePosition
+		end
+	end)
+
+	Conn[2] = UserInputService.InputChanged:Connect(function(input)
+		if not pinching then return end
+		if input ~= TouchA and input ~= TouchB then return end
+
+		local currentDistance = (TouchA.Position - TouchB.Position).Magnitude
+		local scale = currentDistance / StartDistance
+
+		ApplyScale(scale, StartSize, StartAbsSize, StartPos, StartAbsPos)
+	end)
+
+	Conn[3] = Handle.InputChanged:Connect(function(input)
+		if input.UserInputType ~= Enum.UserInputType.MouseWheel then return end
+
+		local direction = input.Position.Z
+		local scale = 1 + (direction * ZoomStep)
+
+		ApplyScale(scale, Main.Size, Main.AbsoluteSize, Main.Position, Main.AbsolutePosition)
+	end)
+
+	function self:Disconnect()
+		pinching = false
+		TouchA = nil
+		TouchB = nil
 		for _, c in Conn do
 			c:Disconnect()
 		end
