@@ -9,12 +9,15 @@ export type SwipeDirection = "Left" | "Right" | "Up" | "Down"
 
 export type SwipeCallback = (direction: SwipeDirection, distance: number) -> ()
 
+export type PanCallback = (delta: Vector2, magnitude: number) -> ()
+
 export type UIGesture = {
 	MakeDraggable: (self: UIGesture, Main: GuiObject, Handle: GuiObject?) -> GestureHandle,
 	MakeResizeable: (self: UIGesture, Main: GuiObject, Handle: GuiObject?, MinSize: Vector2?, MaxSize: Vector2?) -> GestureHandle,
 	MakeSwipeable: (self: UIGesture, Main: GuiObject, Handle: GuiObject?, Callback: SwipeCallback?, Threshold: number?, MaxTime: number?) -> GestureHandle,
 	MakeRotatable: (self: UIGesture, Main: GuiObject, Handle: GuiObject?) -> GestureHandle,
 	MakeZoomable: (self: UIGesture, Main: GuiObject, Handle: GuiObject?, Content: GuiObject?, MinZoom: number?, MaxZoom: number?, ZoomStep: number?) -> GestureHandle,
+	MakePannable: (self: UIGesture, Main: GuiObject, Handle: GuiObject?, Callback: PanCallback?, Radius: number?, ReturnToCenter: boolean?, LockAxis: ("X" | "Y")?) -> GestureHandle,
 }
 
 local UIGesture = {} :: UIGesture
@@ -469,6 +472,100 @@ function UIGesture:MakeZoomable(Main, Handle, Content, MinZoom, MaxZoom, ZoomSte
 		pinching = false
 		TouchA = nil
 		TouchB = nil
+		for _, c in Conn do
+			c:Disconnect()
+		end
+	end
+
+	return self
+end
+
+function UIGesture:MakePannable(Main, Handle, Callback, Radius, ReturnToCenter, LockAxis)
+	Main = Main or Handle
+	Handle = Handle or Main
+	assert(Main and Handle, "MakePannable: needs at least one GuiObject")
+
+	if not Handle.Active then
+		Handle.Active = true
+	end
+
+	local panning = false
+	local ActiveInput, DragInput, DragStart, StartPos
+
+	local Conn = {}
+	local self = {}
+
+	local function ApplyPan(offset)
+		Main.Position = UDim2.new(
+			StartPos.X.Scale,
+			StartPos.X.Offset + offset.X,
+			StartPos.Y.Scale,
+			StartPos.Y.Offset + offset.Y
+		)
+
+		if Callback then
+			Callback(offset, offset.Magnitude)
+		end
+	end
+
+	Conn[1] = Handle.InputBegan:Connect(function(input)
+		if panning then return end
+		if input.UserInputState ~= Enum.UserInputState.Begin then return end
+
+		if input.UserInputType == Enum.UserInputType.MouseButton1
+			or input.UserInputType == Enum.UserInputType.Touch then
+			panning = true
+			ActiveInput = input
+			DragStart = input.Position
+			StartPos = Main.Position
+
+			input.Changed:Connect(function()
+				if input ~= ActiveInput then return end
+
+				if input.UserInputState == Enum.UserInputState.End
+					or input.UserInputState == Enum.UserInputState.Cancel then
+					panning = false
+					ActiveInput = nil
+					DragInput = nil
+
+					if ReturnToCenter then
+						ApplyPan(Vector2.new(0, 0))
+					end
+				end
+			end)
+		end
+	end)
+
+	Conn[2] = Handle.InputChanged:Connect(function(input)
+		if input == ActiveInput
+			and (input.UserInputType == Enum.UserInputType.MouseMovement
+			or input.UserInputType == Enum.UserInputType.Touch) then
+			DragInput = input
+		end
+	end)
+
+	Conn[3] = UserInputService.InputChanged:Connect(function(input)
+		if panning and input == DragInput then
+			local delta = input.Position - DragStart
+			local offset = Vector2.new(delta.X, delta.Y)
+
+			if LockAxis == "X" then
+				offset = Vector2.new(offset.X, 0)
+			elseif LockAxis == "Y" then
+				offset = Vector2.new(0, offset.Y)
+			end
+
+			if Radius and offset.Magnitude > Radius then
+				offset = offset.Unit * Radius
+			end
+
+			ApplyPan(offset)
+		end
+	end)
+
+	function self:Disconnect()
+		panning = false
+		ActiveInput = nil
 		for _, c in Conn do
 			c:Disconnect()
 		end
