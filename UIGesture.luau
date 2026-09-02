@@ -14,7 +14,7 @@ export type UIGesture = {
 	MakeResizeable: (self: UIGesture, Main: GuiObject, Handle: GuiObject?, MinSize: Vector2?, MaxSize: Vector2?) -> GestureHandle,
 	MakeSwipeable: (self: UIGesture, Main: GuiObject, Handle: GuiObject?, Callback: SwipeCallback?, Threshold: number?, MaxTime: number?) -> GestureHandle,
 	MakeRotatable: (self: UIGesture, Main: GuiObject, Handle: GuiObject?) -> GestureHandle,
-	MakeZoomable: (self: UIGesture, Main: GuiObject, Handle: GuiObject?, MinSize: Vector2?, MaxSize: Vector2?, ZoomStep: number?) -> GestureHandle,
+	MakeZoomable: (self: UIGesture, Main: GuiObject, Handle: GuiObject?, Content: GuiObject?, MinScale: number?, MaxScale: number?, ZoomStep: number?) -> GestureHandle,
 }
 
 local UIGesture = {} :: UIGesture
@@ -336,50 +336,49 @@ function UIGesture:MakeRotatable(Main, Handle)
 	return self
 end
 
-function UIGesture:MakeZoomable(Main, Handle, MinSize, MaxSize, ZoomStep)
+function UIGesture:MakeZoomable(Main, Handle, Content, MinScale, MaxScale, ZoomStep)
 	Main = Main or Handle
 	Handle = Handle or Main
 	assert(Main and Handle, "MakeZoomable: needs at least one GuiObject")
+	assert(Content, "MakeZoomable: needs a Content GuiObject to scale")
 
 	if not Handle.Active then
 		Handle.Active = true
 	end
 
-	MinSize = MinSize or Vector2.new(20, 20)
-	MaxSize = MaxSize or Vector2.new(math.huge, math.huge)
+	MinScale = MinScale or 0.5
+	MaxScale = MaxScale or 3
 	ZoomStep = ZoomStep or 0.1
 
+	local ContentScale = Content:FindFirstChildOfClass("UIScale")
+	if not ContentScale then
+		ContentScale = Instance.new("UIScale")
+		ContentScale.Parent = Content
+	end
+
 	local pinching = false
-	local TouchA, TouchB, StartDistance, StartSize, StartAbsSize, StartPos, StartAbsPos
+	local TouchA, TouchB, StartDistance, StartScale, StartAbsSize, StartPos, StartAbsPos
 
 	local Conn = {}
 	local self = {}
 
-	local function ApplyScale(scale, baseSize, baseAbsSize, basePos, baseAbsPos)
+	local function ApplyZoom(factor, baseScale, baseAbsSize, basePos, baseAbsPos)
+		local clampedScale = math.clamp(baseScale * factor, MinScale, MaxScale)
+
 		local center = baseAbsPos + baseAbsSize / 2
+		local newAbsSize = baseAbsSize * (clampedScale / baseScale)
 
-		local desiredAbsWidth = baseAbsSize.X * scale
-		local desiredAbsHeight = baseAbsSize.Y * scale
+		local desiredAbsX = center.X - newAbsSize.X / 2
+		local desiredAbsY = center.Y - newAbsSize.Y / 2
 
-		local clampedAbsWidth = math.clamp(desiredAbsWidth, MinSize.X, MaxSize.X)
-		local clampedAbsHeight = math.clamp(desiredAbsHeight, MinSize.Y, MaxSize.Y)
-
-		local desiredAbsX = center.X - clampedAbsWidth / 2
-		local desiredAbsY = center.Y - clampedAbsHeight / 2
-
-		Main.Size = UDim2.new(
-			baseSize.X.Scale,
-			baseSize.X.Offset + (clampedAbsWidth - baseAbsSize.X),
-			baseSize.Y.Scale,
-			baseSize.Y.Offset + (clampedAbsHeight - baseAbsSize.Y)
-		)
-
-		Main.Position = UDim2.new(
+		Content.Position = UDim2.new(
 			basePos.X.Scale,
 			basePos.X.Offset + (desiredAbsX - baseAbsPos.X),
 			basePos.Y.Scale,
 			basePos.Y.Offset + (desiredAbsY - baseAbsPos.Y)
 		)
+
+		ContentScale.Scale = clampedScale
 	end
 
 	local function EndTouch(input)
@@ -413,10 +412,10 @@ function UIGesture:MakeZoomable(Main, Handle, MinSize, MaxSize, ZoomStep)
 		if TouchA and TouchB then
 			pinching = true
 			StartDistance = (TouchA.Position - TouchB.Position).Magnitude
-			StartSize = Main.Size
-			StartAbsSize = Main.AbsoluteSize
-			StartPos = Main.Position
-			StartAbsPos = Main.AbsolutePosition
+			StartScale = ContentScale.Scale
+			StartAbsSize = Content.AbsoluteSize
+			StartPos = Content.Position
+			StartAbsPos = Content.AbsolutePosition
 		end
 	end)
 
@@ -425,18 +424,18 @@ function UIGesture:MakeZoomable(Main, Handle, MinSize, MaxSize, ZoomStep)
 		if input ~= TouchA and input ~= TouchB then return end
 
 		local currentDistance = (TouchA.Position - TouchB.Position).Magnitude
-		local scale = currentDistance / StartDistance
+		local factor = currentDistance / StartDistance
 
-		ApplyScale(scale, StartSize, StartAbsSize, StartPos, StartAbsPos)
+		ApplyZoom(factor, StartScale, StartAbsSize, StartPos, StartAbsPos)
 	end)
 
 	Conn[3] = Handle.InputChanged:Connect(function(input)
 		if input.UserInputType ~= Enum.UserInputType.MouseWheel then return end
 
 		local direction = input.Position.Z
-		local scale = 1 + (direction * ZoomStep)
+		local factor = 1 + (direction * ZoomStep)
 
-		ApplyScale(scale, Main.Size, Main.AbsoluteSize, Main.Position, Main.AbsolutePosition)
+		ApplyZoom(factor, ContentScale.Scale, Content.AbsoluteSize, Content.Position, Content.AbsolutePosition)
 	end)
 
 	function self:Disconnect()
