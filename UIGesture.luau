@@ -1,5 +1,6 @@
 local UserInputService = game:GetService("UserInputService")
 local GuiService = game:GetService("GuiService")
+local RunService = game:GetService("RunService")
 
 export type GestureHandle = {
 	Disconnect: (self: GestureHandle) -> (),
@@ -11,13 +12,26 @@ export type SwipeCallback = (direction: SwipeDirection, distance: number) -> ()
 
 export type PanCallback = (delta: Vector2, magnitude: number) -> ()
 
+export type HoverCallback = (Hovering: boolean) -> ()
+
+export type PanConfig = {
+	Radius: number?,
+	ReturnToCenter: boolean?,
+	LockAxis: ("X" | "Y")?,
+	MoveMain: boolean?,
+	Momentum: boolean?,
+	Friction: number?,
+	PanButton: Enum.UserInputType?,
+}
+
 export type UIGesture = {
 	MakeDraggable: (self: UIGesture, Main: GuiObject, Handle: GuiObject?) -> GestureHandle,
 	MakeResizeable: (self: UIGesture, Main: GuiObject, Handle: GuiObject?, MinSize: Vector2?, MaxSize: Vector2?) -> GestureHandle,
-	MakeSwipeable: (self: UIGesture, Main: GuiObject, Handle: GuiObject?, Callback: SwipeCallback?, Threshold: number?, MaxTime: number?) -> GestureHandle,
+	MakeSwipeable: (self: UIGesture, Main: GuiObject, Handle: GuiObject?, Callback: SwipeCallback?, Threshold: number?, MaxTime: number?, Direction: (SwipeDirection | {SwipeDirection})?) -> GestureHandle,
 	MakeRotatable: (self: UIGesture, Main: GuiObject, Handle: GuiObject?) -> GestureHandle,
 	MakeZoomable: (self: UIGesture, Main: GuiObject, Handle: GuiObject?, Content: GuiObject?, MinZoom: number?, MaxZoom: number?, ZoomStep: number?) -> GestureHandle,
-	MakePannable: (self: UIGesture, Main: GuiObject, Handle: GuiObject?, Callback: PanCallback?, Radius: number?, ReturnToCenter: boolean?, LockAxis: ("X" | "Y")?) -> GestureHandle,
+	MakePannable: (self: UIGesture, Main: GuiObject, Handle: GuiObject?, Callback: PanCallback?, Config: PanConfig?) -> GestureHandle,
+	MakeHoverable: (self: UIGesture, Main: GuiObject, Handle: GuiObject?, Callback: HoverCallback?) -> GestureHandle,
 }
 
 local UIGesture = {} :: UIGesture
@@ -194,7 +208,7 @@ function UIGesture:MakeResizeable(Main, Handle, MinSize, MaxSize)
 	return self
 end
 
-function UIGesture:MakeSwipeable(Main, Handle, Callback, Threshold, MaxTime)
+function UIGesture:MakeSwipeable(Main, Handle, Callback, Threshold, MaxTime, Direction)
 	Main = Main or Handle
 	Handle = Handle or Main
 	assert(Main and Handle, "MakeSwipeable: needs at least one GuiObject")
@@ -224,6 +238,23 @@ function UIGesture:MakeSwipeable(Main, Handle, Callback, Threshold, MaxTime)
 		end
 	end
 
+	local function MatchesDirection(direction, filter)
+		if not filter then
+			return true
+		end
+
+		if type(filter) == "table" then
+			for _, d in filter do
+				if d == direction then
+					return true
+				end
+			end
+			return false
+		end
+
+		return direction == filter
+	end
+
 	Conn[1] = Handle.InputBegan:Connect(function(input)
 		if swiping then return end
 		if input.UserInputState ~= Enum.UserInputState.Begin then return end
@@ -248,7 +279,7 @@ function UIGesture:MakeSwipeable(Main, Handle, Callback, Threshold, MaxTime)
 						local delta = input.Position - StartPos
 						local direction = GetDirection(delta)
 
-						if direction and Callback then
+						if direction and Callback and MatchesDirection(direction, Direction) then
 							Callback(direction, delta.Magnitude)
 						end
 					end
@@ -480,7 +511,7 @@ function UIGesture:MakeZoomable(Main, Handle, Content, MinZoom, MaxZoom, ZoomSte
 	return self
 end
 
-function UIGesture:MakePannable(Main, Handle, Callback, Radius, ReturnToCenter, LockAxis)
+function UIGesture:MakePannable(Main, Handle, Callback, Config)
 	Main = Main or Handle
 	Handle = Handle or Main
 	assert(Main and Handle, "MakePannable: needs at least one GuiObject")
@@ -489,35 +520,103 @@ function UIGesture:MakePannable(Main, Handle, Callback, Radius, ReturnToCenter, 
 		Handle.Active = true
 	end
 
+	Config = Config or {}
+
+	local Radius = Config.Radius
+	local ReturnToCenter = Config.ReturnToCenter
+	local LockAxis = Config.LockAxis
+	local Momentum = Config.Momentum
+	local Friction = Config.Friction or 4
+	local PanButton = Config.PanButton or Enum.UserInputType.MouseButton1
+	local MoveMain = if Config.MoveMain == nil then true else Config.MoveMain
+
 	local panning = false
-	local ActiveInput, DragInput, DragStart, StartPos
+	local ActiveInput, DragInput, DragStart
+	local BasePos = Main.Position
+	local CurrentOffset, DragStartOffset = Vector2.new(0, 0), Vector2.new(0, 0)
+	local LastOffset, LastSampleTime, Velocity = Vector2.new(0, 0), 0, Vector2.new(0, 0)
+	local MomentumConn
 
 	local Conn = {}
 	local self = {}
 
 	local function ApplyPan(offset)
-		Main.Position = UDim2.new(
-			StartPos.X.Scale,
-			StartPos.X.Offset + offset.X,
-			StartPos.Y.Scale,
-			StartPos.Y.Offset + offset.Y
-		)
+		if MoveMain then
+			Main.Position = UDim2.new(
+				BasePos.X.Scale,
+				BasePos.X.Offset + offset.X,
+				BasePos.Y.Scale,
+				BasePos.Y.Offset + offset.Y
+			)
+		end
 
 		if Callback then
 			Callback(offset, offset.Magnitude)
 		end
 	end
 
+	local function ClampOffset(offset)
+		if LockAxis == "X" then
+			offset = Vector2.new(offset.X, 0)
+		elseif LockAxis == "Y" then
+			offset = Vector2.new(0, offset.Y)
+		end
+
+		if Radius and offset.Magnitude > Radius then
+			offset = offset.Unit * Radius
+		end
+
+		return offset
+	end
+
+	local function StopMomentum()
+		if MomentumConn then
+			MomentumConn:Disconnect()
+			MomentumConn = nil
+		end
+	end
+
+	local function StartMomentum()
+		StopMomentum()
+
+		local velocity = Velocity
+		local offset = CurrentOffset
+
+		MomentumConn = RunService.Heartbeat:Connect(function(dt)
+			velocity = velocity * math.exp(-Friction * dt)
+
+			if velocity.Magnitude < 1 then
+				StopMomentum()
+
+				if ReturnToCenter then
+					CurrentOffset = Vector2.new(0, 0)
+					ApplyPan(CurrentOffset)
+				end
+
+				return
+			end
+
+			offset = ClampOffset(offset + velocity * dt)
+			CurrentOffset = offset
+			ApplyPan(offset)
+		end)
+	end
+
 	Conn[1] = Handle.InputBegan:Connect(function(input)
 		if panning then return end
 		if input.UserInputState ~= Enum.UserInputState.Begin then return end
 
-		if input.UserInputType == Enum.UserInputType.MouseButton1
+		if input.UserInputType == PanButton
 			or input.UserInputType == Enum.UserInputType.Touch then
+			StopMomentum()
+
 			panning = true
 			ActiveInput = input
 			DragStart = input.Position
-			StartPos = Main.Position
+			DragStartOffset = CurrentOffset
+			LastOffset = CurrentOffset
+			LastSampleTime = os.clock()
+			Velocity = Vector2.new(0, 0)
 
 			input.Changed:Connect(function()
 				if input ~= ActiveInput then return end
@@ -528,8 +627,11 @@ function UIGesture:MakePannable(Main, Handle, Callback, Radius, ReturnToCenter, 
 					ActiveInput = nil
 					DragInput = nil
 
-					if ReturnToCenter then
-						ApplyPan(Vector2.new(0, 0))
+					if Momentum then
+						StartMomentum()
+					elseif ReturnToCenter then
+						CurrentOffset = Vector2.new(0, 0)
+						ApplyPan(CurrentOffset)
 					end
 				end
 			end)
@@ -547,17 +649,16 @@ function UIGesture:MakePannable(Main, Handle, Callback, Radius, ReturnToCenter, 
 	Conn[3] = UserInputService.InputChanged:Connect(function(input)
 		if panning and input == DragInput then
 			local delta = input.Position - DragStart
-			local offset = Vector2.new(delta.X, delta.Y)
+			local offset = ClampOffset(DragStartOffset + Vector2.new(delta.X, delta.Y))
 
-			if LockAxis == "X" then
-				offset = Vector2.new(offset.X, 0)
-			elseif LockAxis == "Y" then
-				offset = Vector2.new(0, offset.Y)
+			local now = os.clock()
+			local dt = now - LastSampleTime
+			if dt > 0 then
+				Velocity = (offset - LastOffset) / dt
 			end
-
-			if Radius and offset.Magnitude > Radius then
-				offset = offset.Unit * Radius
-			end
+			LastOffset = offset
+			LastSampleTime = now
+			CurrentOffset = offset
 
 			ApplyPan(offset)
 		end
@@ -566,6 +667,40 @@ function UIGesture:MakePannable(Main, Handle, Callback, Radius, ReturnToCenter, 
 	function self:Disconnect()
 		panning = false
 		ActiveInput = nil
+		StopMomentum()
+		for _, c in Conn do
+			c:Disconnect()
+		end
+	end
+
+	return self
+end
+
+function UIGesture:MakeHoverable(Main, Handle, Callback)
+	Main = Main or Handle
+	Handle = Handle or Main
+	assert(Main and Handle, "MakeHoverable: needs at least one GuiObject")
+
+	if not Handle.Active then
+		Handle.Active = true
+	end
+
+	local Conn = {}
+	local self = {}
+
+	Conn[1] = Handle.MouseEnter:Connect(function()
+		if Callback then
+			Callback(true)
+		end
+	end)
+
+	Conn[2] = Handle.MouseLeave:Connect(function()
+		if Callback then
+			Callback(false)
+		end
+	end)
+
+	function self:Disconnect()
 		for _, c in Conn do
 			c:Disconnect()
 		end
