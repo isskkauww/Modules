@@ -15,7 +15,7 @@ export type PanCallback = (delta: Vector2, magnitude: number) -> ()
 export type HoverCallback = (Hovering: boolean) -> ()
 
 export type PanConfig = {
-	Radius: number?,
+	Radius: (number | {number})?,
 	ReturnToCenter: boolean?,
 	LockAxis: ("X" | "Y")?,
 	MoveMain: boolean?,
@@ -530,6 +530,8 @@ function UIGesture:MakePannable(Main, Handle, Callback, Config)
 	local PanButton = Config.PanButton or Enum.UserInputType.MouseButton1
 	local MoveMain = if Config.MoveMain == nil then true else Config.MoveMain
 
+	assert(not (type(Radius) == "table" and not LockAxis), "MakePannable: Radius table (Min/Max) requires LockAxis to be set")
+
 	local panning = false
 	local ActiveInput, DragInput, DragStart
 	local BasePos = Main.Position
@@ -556,10 +558,19 @@ function UIGesture:MakePannable(Main, Handle, Callback, Config)
 	end
 
 	local function ClampOffset(offset)
-		if LockAxis == "X" then
-			offset = Vector2.new(offset.X, 0)
-		elseif LockAxis == "Y" then
-			offset = Vector2.new(0, offset.Y)
+		if LockAxis == "X" or LockAxis == "Y" then
+			local value = if LockAxis == "X" then offset.X else offset.Y
+			local min, max = -math.huge, math.huge
+
+			if type(Radius) == "table" then
+				min, max = Radius[1], Radius[2]
+			elseif Radius then
+				min, max = -Radius, Radius
+			end
+
+			value = math.clamp(value, min, max)
+
+			return if LockAxis == "X" then Vector2.new(value, 0) else Vector2.new(0, value)
 		end
 
 		if Radius and offset.Magnitude > Radius then
