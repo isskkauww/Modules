@@ -565,6 +565,7 @@ function UIGesture:MakePannable(Main, Handle, Callback, Config)
 
 	local panning = false
 	local ActiveInput, DragInput, DragStart
+	local HeldTouches, HeldTouchCount = {}, 0
 	local BasePos = Main.Position
 	local CurrentOffset, DragStartOffset = Vector2.new(0, 0), Vector2.new(0, 0)
 	local LastOffset, LastSampleTime, Velocity = Vector2.new(0, 0), 0, Vector2.new(0, 0)
@@ -619,11 +620,23 @@ function UIGesture:MakePannable(Main, Handle, Callback, Config)
 	end
 
 	Conn[1] = Handle.InputBegan:Connect(function(input)
-		if panning then return end
+		if input.UserInputType == Enum.UserInputType.Touch and input.UserInputState == Enum.UserInputState.Begin then
+			HeldTouches[input] = true
+			HeldTouchCount += 1
+		end
+
+		if panning then
+			if input.UserInputType == Enum.UserInputType.Touch and ActiveInput.UserInputType == Enum.UserInputType.Touch then
+				panning = false
+				ActiveInput = nil
+				DragInput = nil
+			end
+			return
+		end
 		if input.UserInputState ~= Enum.UserInputState.Begin then return end
 
 		if input.UserInputType == PanButton
-			or input.UserInputType == Enum.UserInputType.Touch then
+			or (input.UserInputType == Enum.UserInputType.Touch and HeldTouchCount == 1) then
 			StopMomentum()
 
 			panning = true
@@ -663,7 +676,30 @@ function UIGesture:MakePannable(Main, Handle, Callback, Config)
 	end
 
 	local function OnPanInputEnded(input)
-		if input ~= ActiveInput then return end
+		if HeldTouches[input] then
+			HeldTouches[input] = nil
+			HeldTouchCount -= 1
+		end
+
+		if input ~= ActiveInput then
+			if not panning and HeldTouchCount == 1 then
+				local remaining
+				for heldInput in pairs(HeldTouches) do
+					remaining = heldInput
+				end
+
+				StopMomentum()
+
+				panning = true
+				ActiveInput = remaining
+				DragStart = remaining.Position
+				DragStartOffset = CurrentOffset
+				LastOffset = CurrentOffset
+				LastSampleTime = os.clock()
+				Velocity = Vector2.new(0, 0)
+			end
+			return
+		end
 
 		panning = false
 		ActiveInput = nil
