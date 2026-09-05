@@ -2,6 +2,8 @@ local UserInputService = game:GetService("UserInputService")
 local GuiService = game:GetService("GuiService")
 local RunService = game:GetService("RunService")
 
+local Camera = workspace.CurrentCamera
+
 export type GestureHandle = {
 	Disconnect: (self: GestureHandle) -> (),
 }
@@ -36,14 +38,27 @@ export type UIGesture = {
 
 local UIGesture = {} :: UIGesture
 
+local InputChangedListeners = {}
+local InputEndedListeners = {}
+
+UserInputService.InputChanged:Connect(function(input)
+	for listener in pairs(InputChangedListeners) do
+		listener(input)
+	end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+	for listener in pairs(InputEndedListeners) do
+		listener(input)
+	end
+end)
+
 function UIGesture:MakeDraggable(Main, Handle)
 	Main = Main or Handle
 	Handle = Handle or Main
-	assert(Main or Handle, "MakeDraggable: needs at least one GuiObject")
+	assert(Main, "MakeDraggable: needs at least one GuiObject")
 
-	if not Handle.Active then
-		Handle.Active = true
-	end
+	Handle.Active = true
 
 	local dragging = false
 	local ActiveInput, DragInput, DragStart, StartPos, StartAbsPos
@@ -62,17 +77,6 @@ function UIGesture:MakeDraggable(Main, Handle)
 			DragStart = input.Position
 			StartPos = Main.Position
 			StartAbsPos = Main.AbsolutePosition
-
-			input.Changed:Connect(function()
-				if input ~= ActiveInput then return end
-
-				if input.UserInputState == Enum.UserInputState.End
-					or input.UserInputState == Enum.UserInputState.Cancel then
-					dragging = false
-					ActiveInput = nil
-					DragInput = nil
-				end
-			end)
 		end
 	end)
 
@@ -84,14 +88,14 @@ function UIGesture:MakeDraggable(Main, Handle)
 		end
 	end)
 
-	Conn[3] = UserInputService.InputChanged:Connect(function(input)
+	local function OnDragInputChanged(input)
 		if dragging and input == DragInput then
 
 			local delta = input.Position - DragStart
 			local desiredAbsX = StartAbsPos.X + delta.X
 			local desiredAbsY = StartAbsPos.Y + delta.Y
 
-			local viewportSize = workspace.CurrentCamera.ViewportSize
+			local viewportSize = Camera.ViewportSize
 
 			local minX = 0
 			local minY = -GuiService:GetGuiInset().Y
@@ -108,7 +112,26 @@ function UIGesture:MakeDraggable(Main, Handle)
 				StartPos.Y.Offset + (clampedAbsY - StartAbsPos.Y)
 			)
 		end
-	end)
+	end
+
+	local function OnDragInputEnded(input)
+		if input == ActiveInput then
+			dragging = false
+			ActiveInput = nil
+			DragInput = nil
+		end
+	end
+
+	InputChangedListeners[OnDragInputChanged] = true
+	InputEndedListeners[OnDragInputEnded] = true
+
+	Conn[3] = { Disconnect = function()
+		InputChangedListeners[OnDragInputChanged] = nil
+	end }
+
+	Conn[4] = { Disconnect = function()
+		InputEndedListeners[OnDragInputEnded] = nil
+	end }
 
 	function self:Disconnect()
 		dragging = false
@@ -124,11 +147,9 @@ end
 function UIGesture:MakeResizeable(Main, Handle, MinSize, MaxSize)
 	Main = Main or Handle
 	Handle = Handle or Main
-	assert(Main or Handle, "MakeResizeable: needs at least one GuiObject")
+	assert(Main, "MakeResizeable: needs at least one GuiObject")
 
-	if not Handle.Active then
-		Handle.Active = true
-	end
+	Handle.Active = true
 
 	MinSize = MinSize or Vector2.new(5, 5)
 	MaxSize = MaxSize or Vector2.new(math.huge, math.huge)
@@ -151,17 +172,6 @@ function UIGesture:MakeResizeable(Main, Handle, MinSize, MaxSize)
 			StartSize = Main.Size
 			StartAbsSize = Main.AbsoluteSize
 			StartAbsPos = Main.AbsolutePosition
-
-			input.Changed:Connect(function()
-				if input ~= ActiveInput then return end
-
-				if input.UserInputState == Enum.UserInputState.End
-					or input.UserInputState == Enum.UserInputState.Cancel then
-					resizing = false
-					ActiveInput = nil
-					DragInput = nil
-				end
-			end)
 		end
 	end)
 
@@ -173,14 +183,14 @@ function UIGesture:MakeResizeable(Main, Handle, MinSize, MaxSize)
 		end
 	end)
 
-	Conn[3] = UserInputService.InputChanged:Connect(function(input)
+	local function OnResizeInputChanged(input)
 		if resizing and input == DragInput then
 
 			local delta = input.Position - DragStart
 			local desiredAbsWidth = StartAbsSize.X + delta.X
 			local desiredAbsHeight = StartAbsSize.Y + delta.Y
 
-			local viewportSize = workspace.CurrentCamera.ViewportSize
+			local viewportSize = Camera.ViewportSize
 
 			local maxWidth = math.min(viewportSize.X - StartAbsPos.X, MaxSize.X)
 			local maxHeight = math.min(viewportSize.Y - StartAbsPos.Y, MaxSize.Y)
@@ -195,7 +205,26 @@ function UIGesture:MakeResizeable(Main, Handle, MinSize, MaxSize)
 				StartSize.Y.Offset + (clampedAbsHeight - StartAbsSize.Y)
 			)
 		end
-	end)
+	end
+
+	local function OnResizeInputEnded(input)
+		if input == ActiveInput then
+			resizing = false
+			ActiveInput = nil
+			DragInput = nil
+		end
+	end
+
+	InputChangedListeners[OnResizeInputChanged] = true
+	InputEndedListeners[OnResizeInputEnded] = true
+
+	Conn[3] = { Disconnect = function()
+		InputChangedListeners[OnResizeInputChanged] = nil
+	end }
+
+	Conn[4] = { Disconnect = function()
+		InputEndedListeners[OnResizeInputEnded] = nil
+	end }
 
 	function self:Disconnect()
 		resizing = false
@@ -211,11 +240,9 @@ end
 function UIGesture:MakeSwipeable(Main, Handle, Callback, Threshold, MaxTime, Direction)
 	Main = Main or Handle
 	Handle = Handle or Main
-	assert(Main and Handle, "MakeSwipeable: needs at least one GuiObject")
+	assert(Main, "MakeSwipeable: needs at least one GuiObject")
 
-	if not Handle.Active then
-		Handle.Active = true
-	end
+	Handle.Active = true
 
 	Threshold = Threshold or 50
 	MaxTime = MaxTime or 0.5
@@ -225,35 +252,6 @@ function UIGesture:MakeSwipeable(Main, Handle, Callback, Threshold, MaxTime, Dir
 
 	local Conn = {}
 	local self = {}
-
-	local function GetDirection(delta)
-		if delta.Magnitude < Threshold then
-			return nil
-		end
-
-		if math.abs(delta.X) > math.abs(delta.Y) then
-			return delta.X > 0 and "Right" or "Left"
-		else
-			return delta.Y > 0 and "Down" or "Up"
-		end
-	end
-
-	local function MatchesDirection(direction, filter)
-		if not filter then
-			return true
-		end
-
-		if type(filter) == "table" then
-			for _, d in filter do
-				if d == direction then
-					return true
-				end
-			end
-			return false
-		end
-
-		return direction == filter
-	end
 
 	Conn[1] = Handle.InputBegan:Connect(function(input)
 		if swiping then return end
@@ -265,28 +263,54 @@ function UIGesture:MakeSwipeable(Main, Handle, Callback, Threshold, MaxTime, Dir
 			ActiveInput = input
 			StartPos = input.Position
 			StartTime = os.clock()
-
-			input.Changed:Connect(function()
-				if input ~= ActiveInput then return end
-
-				if input.UserInputState == Enum.UserInputState.End
-					or input.UserInputState == Enum.UserInputState.Cancel then
-					swiping = false
-					ActiveInput = nil
-
-					local elapsed = os.clock() - StartTime
-					if elapsed <= MaxTime then
-						local delta = input.Position - StartPos
-						local direction = GetDirection(delta)
-
-						if direction and Callback and MatchesDirection(direction, Direction) then
-							Callback(direction, delta.Magnitude)
-						end
-					end
-				end
-			end)
 		end
 	end)
+
+	local function OnSwipeInputEnded(input)
+		if input ~= ActiveInput then return end
+
+		swiping = false
+		ActiveInput = nil
+
+		local elapsed = os.clock() - StartTime
+		if elapsed <= MaxTime then
+			local delta = input.Position - StartPos
+
+			if delta.Magnitude >= Threshold then
+				local direction
+				if math.abs(delta.X) > math.abs(delta.Y) then
+					direction = delta.X > 0 and "Right" or "Left"
+				else
+					direction = delta.Y > 0 and "Down" or "Up"
+				end
+
+				local matches = true
+				if Direction then
+					if type(Direction) == "table" then
+						matches = false
+						for _, d in Direction do
+							if d == direction then
+								matches = true
+								break
+							end
+						end
+					else
+						matches = direction == Direction
+					end
+				end
+
+				if Callback and matches then
+					Callback(direction, delta.Magnitude)
+				end
+			end
+		end
+	end
+
+	InputEndedListeners[OnSwipeInputEnded] = true
+
+	Conn[2] = { Disconnect = function()
+		InputEndedListeners[OnSwipeInputEnded] = nil
+	end }
 
 	function self:Disconnect()
 		swiping = false
@@ -302,11 +326,9 @@ end
 function UIGesture:MakeRotatable(Main, Handle)
 	Main = Main or Handle
 	Handle = Handle or Main
-	assert(Main and Handle, "MakeRotatable: needs at least one GuiObject")
+	assert(Main, "MakeRotatable: needs at least one GuiObject")
 
-	if not Handle.Active then
-		Handle.Active = true
-	end
+	Handle.Active = true
 
 	local rotating = false
 	local ActiveInput, DragInput, StartAngle, StartRotation
@@ -330,17 +352,6 @@ function UIGesture:MakeRotatable(Main, Handle)
 			ActiveInput = input
 			StartAngle = GetAngle(input.Position)
 			StartRotation = Main.Rotation
-
-			input.Changed:Connect(function()
-				if input ~= ActiveInput then return end
-
-				if input.UserInputState == Enum.UserInputState.End
-					or input.UserInputState == Enum.UserInputState.Cancel then
-					rotating = false
-					ActiveInput = nil
-					DragInput = nil
-				end
-			end)
 		end
 	end)
 
@@ -352,12 +363,31 @@ function UIGesture:MakeRotatable(Main, Handle)
 		end
 	end)
 
-	Conn[3] = UserInputService.InputChanged:Connect(function(input)
+	local function OnRotateInputChanged(input)
 		if rotating and input == DragInput then
 			local currentAngle = GetAngle(input.Position)
 			Main.Rotation = StartRotation + (currentAngle - StartAngle)
 		end
-	end)
+	end
+
+	local function OnRotateInputEnded(input)
+		if input == ActiveInput then
+			rotating = false
+			ActiveInput = nil
+			DragInput = nil
+		end
+	end
+
+	InputChangedListeners[OnRotateInputChanged] = true
+	InputEndedListeners[OnRotateInputEnded] = true
+
+	Conn[3] = { Disconnect = function()
+		InputChangedListeners[OnRotateInputChanged] = nil
+	end }
+
+	Conn[4] = { Disconnect = function()
+		InputEndedListeners[OnRotateInputEnded] = nil
+	end }
 
 	function self:Disconnect()
 		rotating = false
@@ -373,12 +403,10 @@ end
 function UIGesture:MakeZoomable(Main, Handle, Content, MinZoom, MaxZoom, ZoomStep)
 	Main = Main or Handle
 	Handle = Handle or Main
-	assert(Main and Handle, "MakeZoomable: needs at least one GuiObject")
+	assert(Main, "MakeZoomable: needs at least one GuiObject")
 	assert(Content, "MakeZoomable: needs a Content GuiObject to scale")
 
-	if not Handle.Active then
-		Handle.Active = true
-	end
+	Handle.Active = true
 
 	MinZoom = MinZoom or 0.3
 	MaxZoom = MaxZoom or 1
@@ -442,15 +470,6 @@ function UIGesture:MakeZoomable(Main, Handle, Content, MinZoom, MaxZoom, ZoomSte
 		ContentScale.Scale = clampedScale
 	end
 
-	local function EndTouch(input)
-		if input == TouchA then
-			TouchA = nil
-		elseif input == TouchB then
-			TouchB = nil
-		end
-		pinching = false
-	end
-
 	Conn[1] = Handle.InputBegan:Connect(function(input)
 		if input.UserInputType ~= Enum.UserInputType.Touch then return end
 		if input.UserInputState ~= Enum.UserInputState.Begin then return end
@@ -463,13 +482,6 @@ function UIGesture:MakeZoomable(Main, Handle, Content, MinZoom, MaxZoom, ZoomSte
 			return
 		end
 
-		input.Changed:Connect(function()
-			if input.UserInputState == Enum.UserInputState.End
-				or input.UserInputState == Enum.UserInputState.Cancel then
-				EndTouch(input)
-			end
-		end)
-
 		if TouchA and TouchB then
 			pinching = true
 			StartDistance = (TouchA.Position - TouchB.Position).Magnitude
@@ -480,7 +492,17 @@ function UIGesture:MakeZoomable(Main, Handle, Content, MinZoom, MaxZoom, ZoomSte
 		end
 	end)
 
-	Conn[2] = UserInputService.InputChanged:Connect(function(input)
+	local function OnZoomInputEnded(input)
+		if input == TouchA then
+			TouchA = nil
+			pinching = false
+		elseif input == TouchB then
+			TouchB = nil
+			pinching = false
+		end
+	end
+
+	local function OnZoomInputChanged(input)
 		if not pinching then return end
 		if input ~= TouchA and input ~= TouchB then return end
 
@@ -488,9 +510,20 @@ function UIGesture:MakeZoomable(Main, Handle, Content, MinZoom, MaxZoom, ZoomSte
 		local factor = currentDistance / StartDistance
 
 		ApplyZoom(factor, StartScale, StartAbsSize, StartPos, StartAbsPos)
-	end)
+	end
 
-	Conn[3] = Handle.InputChanged:Connect(function(input)
+	InputEndedListeners[OnZoomInputEnded] = true
+	InputChangedListeners[OnZoomInputChanged] = true
+
+	Conn[2] = { Disconnect = function()
+		InputEndedListeners[OnZoomInputEnded] = nil
+	end }
+
+	Conn[3] = { Disconnect = function()
+		InputChangedListeners[OnZoomInputChanged] = nil
+	end }
+
+	Conn[4] = Handle.InputChanged:Connect(function(input)
 		if input.UserInputType ~= Enum.UserInputType.MouseWheel then return end
 
 		local direction = input.Position.Z
@@ -514,11 +547,9 @@ end
 function UIGesture:MakePannable(Main, Handle, Callback, Config)
 	Main = Main or Handle
 	Handle = Handle or Main
-	assert(Main and Handle, "MakePannable: needs at least one GuiObject")
+	assert(Main, "MakePannable: needs at least one GuiObject")
 
-	if not Handle.Active then
-		Handle.Active = true
-	end
+	Handle.Active = true
 
 	Config = Config or {}
 
@@ -587,32 +618,6 @@ function UIGesture:MakePannable(Main, Handle, Callback, Config)
 		end
 	end
 
-	local function StartMomentum()
-		StopMomentum()
-
-		local velocity = Velocity
-		local offset = CurrentOffset
-
-		MomentumConn = RunService.Heartbeat:Connect(function(dt)
-			velocity = velocity * math.exp(-Friction * dt)
-
-			if velocity.Magnitude < 1 then
-				StopMomentum()
-
-				if ReturnToCenter then
-					CurrentOffset = Vector2.new(0, 0)
-					ApplyPan(CurrentOffset)
-				end
-
-				return
-			end
-
-			offset = ClampOffset(offset + velocity * dt)
-			CurrentOffset = offset
-			ApplyPan(offset)
-		end)
-	end
-
 	Conn[1] = Handle.InputBegan:Connect(function(input)
 		if panning then return end
 		if input.UserInputState ~= Enum.UserInputState.Begin then return end
@@ -628,24 +633,6 @@ function UIGesture:MakePannable(Main, Handle, Callback, Config)
 			LastOffset = CurrentOffset
 			LastSampleTime = os.clock()
 			Velocity = Vector2.new(0, 0)
-
-			input.Changed:Connect(function()
-				if input ~= ActiveInput then return end
-
-				if input.UserInputState == Enum.UserInputState.End
-					or input.UserInputState == Enum.UserInputState.Cancel then
-					panning = false
-					ActiveInput = nil
-					DragInput = nil
-
-					if Momentum then
-						StartMomentum()
-					elseif ReturnToCenter then
-						CurrentOffset = Vector2.new(0, 0)
-						ApplyPan(CurrentOffset)
-					end
-				end
-			end)
 		end
 	end)
 
@@ -657,7 +644,7 @@ function UIGesture:MakePannable(Main, Handle, Callback, Config)
 		end
 	end)
 
-	Conn[3] = UserInputService.InputChanged:Connect(function(input)
+	local function OnPanInputChanged(input)
 		if panning and input == DragInput then
 			local delta = input.Position - DragStart
 			local offset = ClampOffset(DragStartOffset + Vector2.new(delta.X, delta.Y))
@@ -673,7 +660,55 @@ function UIGesture:MakePannable(Main, Handle, Callback, Config)
 
 			ApplyPan(offset)
 		end
-	end)
+	end
+
+	local function OnPanInputEnded(input)
+		if input ~= ActiveInput then return end
+
+		panning = false
+		ActiveInput = nil
+		DragInput = nil
+
+		if Momentum then
+			StopMomentum()
+
+			local velocity = Velocity
+			local offset = CurrentOffset
+
+			MomentumConn = RunService.Heartbeat:Connect(function(dt)
+				velocity = velocity * math.exp(-Friction * dt)
+
+				if velocity.Magnitude < 1 then
+					StopMomentum()
+
+					if ReturnToCenter then
+						CurrentOffset = Vector2.new(0, 0)
+						ApplyPan(CurrentOffset)
+					end
+
+					return
+				end
+
+				offset = ClampOffset(offset + velocity * dt)
+				CurrentOffset = offset
+				ApplyPan(offset)
+			end)
+		elseif ReturnToCenter then
+			CurrentOffset = Vector2.new(0, 0)
+			ApplyPan(CurrentOffset)
+		end
+	end
+
+	InputChangedListeners[OnPanInputChanged] = true
+	InputEndedListeners[OnPanInputEnded] = true
+
+	Conn[3] = { Disconnect = function()
+		InputChangedListeners[OnPanInputChanged] = nil
+	end }
+
+	Conn[4] = { Disconnect = function()
+		InputEndedListeners[OnPanInputEnded] = nil
+	end }
 
 	function self:Disconnect()
 		panning = false
@@ -690,25 +725,20 @@ end
 function UIGesture:MakeHoverable(Main, Handle, Callback)
 	Main = Main or Handle
 	Handle = Handle or Main
-	assert(Main and Handle, "MakeHoverable: needs at least one GuiObject")
+	assert(Main, "MakeHoverable: needs at least one GuiObject")
+	assert(Callback, "MakeHoverable: needs a Callback")
 
-	if not Handle.Active then
-		Handle.Active = true
-	end
+	Handle.Active = true
 
 	local Conn = {}
 	local self = {}
 
 	Conn[1] = Handle.MouseEnter:Connect(function()
-		if Callback then
-			Callback(true)
-		end
+		Callback(true)
 	end)
 
 	Conn[2] = Handle.MouseLeave:Connect(function()
-		if Callback then
-			Callback(false)
-		end
+		Callback(false)
 	end)
 
 	function self:Disconnect()
