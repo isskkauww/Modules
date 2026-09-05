@@ -17,7 +17,7 @@ export type PanCallback = (delta: Vector2, magnitude: number) -> ()
 export type HoverCallback = (Hovering: boolean) -> ()
 
 export type PanConfig = {
-	Radius: (number | {number})?,
+	Radius: (number | Vector2 | {number})?,
 	ReturnToCenter: boolean?,
 	LockAxis: ("X" | "Y")?,
 	MoveMain: boolean?,
@@ -451,11 +451,14 @@ function UIGesture:MakeZoomable(Main, Handle, Content, MinZoom, MaxZoom, ZoomSte
 
 		local clampedScale = math.clamp(baseScale * factor, minAllowedScale, maxAllowedScale)
 
-		local center = Main.AbsolutePosition + Main.AbsoluteSize / 2
+		local anchorScreen = Main.AbsolutePosition + Main.AbsoluteSize / 2
 		local newAbsSize = baseAbsSize * (clampedScale / baseScale)
 
-		local desiredAbsX = center.X - newAbsSize.X / 2
-		local desiredAbsY = center.Y - newAbsSize.Y / 2
+		local fractionX = (anchorScreen.X - baseAbsPos.X) / baseAbsSize.X
+		local fractionY = (anchorScreen.Y - baseAbsPos.Y) / baseAbsSize.Y
+
+		local desiredAbsX = anchorScreen.X - fractionX * newAbsSize.X
+		local desiredAbsY = anchorScreen.Y - fractionY * newAbsSize.Y
 
 		local anchor = Content.AnchorPoint
 		local sizeDelta = newAbsSize - baseAbsSize
@@ -565,7 +568,6 @@ function UIGesture:MakePannable(Main, Handle, Callback, Config)
 
 	local panning = false
 	local ActiveInput, DragInput, DragStart
-	local HeldTouches, HeldTouchCount = {}, 0
 	local BasePos = Main.Position
 	local CurrentOffset, DragStartOffset = Vector2.new(0, 0), Vector2.new(0, 0)
 	local LastOffset, LastSampleTime, Velocity = Vector2.new(0, 0), 0, Vector2.new(0, 0)
@@ -605,6 +607,13 @@ function UIGesture:MakePannable(Main, Handle, Callback, Config)
 			return if LockAxis == "X" then Vector2.new(value, 0) else Vector2.new(0, value)
 		end
 
+		if typeof(Radius) == "Vector2" then
+			return Vector2.new(
+				math.clamp(offset.X, -Radius.X, Radius.X),
+				math.clamp(offset.Y, -Radius.Y, Radius.Y)
+			)
+		end
+
 		if Radius and offset.Magnitude > Radius then
 			offset = offset.Unit * Radius
 		end
@@ -620,11 +629,6 @@ function UIGesture:MakePannable(Main, Handle, Callback, Config)
 	end
 
 	Conn[1] = Handle.InputBegan:Connect(function(input)
-		if input.UserInputType == Enum.UserInputType.Touch and input.UserInputState == Enum.UserInputState.Begin then
-			HeldTouches[input] = true
-			HeldTouchCount += 1
-		end
-
 		if panning then
 			if input.UserInputType == Enum.UserInputType.Touch and ActiveInput.UserInputType == Enum.UserInputType.Touch then
 				panning = false
@@ -636,7 +640,7 @@ function UIGesture:MakePannable(Main, Handle, Callback, Config)
 		if input.UserInputState ~= Enum.UserInputState.Begin then return end
 
 		if input.UserInputType == PanButton
-			or (input.UserInputType == Enum.UserInputType.Touch and HeldTouchCount == 1) then
+			or input.UserInputType == Enum.UserInputType.Touch then
 			StopMomentum()
 
 			panning = true
@@ -676,30 +680,7 @@ function UIGesture:MakePannable(Main, Handle, Callback, Config)
 	end
 
 	local function OnPanInputEnded(input)
-		if HeldTouches[input] then
-			HeldTouches[input] = nil
-			HeldTouchCount -= 1
-		end
-
-		if input ~= ActiveInput then
-			if not panning and HeldTouchCount == 1 then
-				local remaining
-				for heldInput in pairs(HeldTouches) do
-					remaining = heldInput
-				end
-
-				StopMomentum()
-
-				panning = true
-				ActiveInput = remaining
-				DragStart = remaining.Position
-				DragStartOffset = CurrentOffset
-				LastOffset = CurrentOffset
-				LastSampleTime = os.clock()
-				Velocity = Vector2.new(0, 0)
-			end
-			return
-		end
+		if input ~= ActiveInput then return end
 
 		panning = false
 		ActiveInput = nil
