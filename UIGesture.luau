@@ -412,6 +412,9 @@ function UIGesture:MakeZoomable(Main, Handle, MinZoom, MaxZoom, ZoomStep)
 
 	local ContentScale = Main:FindFirstChildOfClass("UIScale")
 	if not ContentScale then
+		ContentScale = Main.Parent:FindFirstChildOfClass("UIScale")
+	end
+	if not ContentScale then
 		ContentScale = Instance.new("UIScale")
 		ContentScale.Parent = Main
 	end
@@ -590,14 +593,20 @@ function UIGesture:MakePannable(Main, Handle, Callback, Config)
 	end
 
 	local function ClampOffset(offset)
+		local ContentScale = Main:FindFirstChildOfClass("UIScale")
+		if not ContentScale then
+			ContentScale = Main.Parent:FindFirstChildOfClass("UIScale")
+		end
+		local scale = if ContentScale then ContentScale.Scale else 1
+
 		if LockAxis == "X" or LockAxis == "Y" then
 			local value = if LockAxis == "X" then offset.X else offset.Y
 			local min, max = -math.huge, math.huge
 
 			if type(Radius) == "table" then
-				min, max = Radius[1], Radius[2]
+				min, max = Radius[1] * scale, Radius[2] * scale
 			elseif Radius then
-				min, max = -Radius, Radius
+				min, max = -Radius * scale, Radius * scale
 			end
 
 			value = math.clamp(value, min, max)
@@ -607,13 +616,13 @@ function UIGesture:MakePannable(Main, Handle, Callback, Config)
 
 		if typeof(Radius) == "Vector2" then
 			return Vector2.new(
-				math.clamp(offset.X, -Radius.X, Radius.X),
-				math.clamp(offset.Y, -Radius.Y, Radius.Y)
+				math.clamp(offset.X, -Radius.X * scale, Radius.X * scale),
+				math.clamp(offset.Y, -Radius.Y * scale, Radius.Y * scale)
 			)
 		end
 
-		if Radius and offset.Magnitude > Radius then
-			offset = offset.Unit * Radius
+		if Radius and offset.Magnitude > Radius * scale then
+			offset = offset.Unit * (Radius * scale)
 		end
 
 		return offset
