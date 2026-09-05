@@ -451,7 +451,7 @@ function UIGesture:MakeZoomable(Main, Handle, Content, MinZoom, MaxZoom, ZoomSte
 
 		local clampedScale = math.clamp(baseScale * factor, minAllowedScale, maxAllowedScale)
 
-		local center = baseAbsPos + baseAbsSize / 2
+		local center = Main.AbsolutePosition + Main.AbsoluteSize / 2
 		local newAbsSize = baseAbsSize * (clampedScale / baseScale)
 
 		local desiredAbsX = center.X - newAbsSize.X / 2
