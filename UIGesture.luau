@@ -31,7 +31,7 @@ export type UIGesture = {
 	MakeResizeable: (self: UIGesture, Main: GuiObject, Handle: GuiObject?, MinSize: Vector2?, MaxSize: Vector2?) -> GestureHandle,
 	MakeSwipeable: (self: UIGesture, Main: GuiObject, Handle: GuiObject?, Callback: SwipeCallback?, Threshold: number?, MaxTime: number?, Direction: (SwipeDirection | {SwipeDirection})?) -> GestureHandle,
 	MakeRotatable: (self: UIGesture, Main: GuiObject, Handle: GuiObject?) -> GestureHandle,
-	MakeZoomable: (self: UIGesture, Main: GuiObject, Handle: GuiObject?, Content: GuiObject?, MinZoom: number?, MaxZoom: number?, ZoomStep: number?) -> GestureHandle,
+	MakeZoomable: (self: UIGesture, Main: GuiObject, Handle: GuiObject, MinZoom: number?, MaxZoom: number?, ZoomStep: number?) -> GestureHandle,
 	MakePannable: (self: UIGesture, Main: GuiObject, Handle: GuiObject?, Callback: PanCallback?, Config: PanConfig?) -> GestureHandle,
 	MakeHoverable: (self: UIGesture, Main: GuiObject, Handle: GuiObject?, Callback: HoverCallback?) -> GestureHandle,
 }
@@ -400,11 +400,9 @@ function UIGesture:MakeRotatable(Main, Handle)
 	return self
 end
 
-function UIGesture:MakeZoomable(Main, Handle, Content, MinZoom, MaxZoom, ZoomStep)
-	Main = Main or Handle
-	Handle = Handle or Main
-	assert(Main, "MakeZoomable: needs at least one GuiObject")
-	assert(Content, "MakeZoomable: needs a Content GuiObject to scale")
+function UIGesture:MakeZoomable(Main, Handle, MinZoom, MaxZoom, ZoomStep)
+	assert(Main, "MakeZoomable: needs a GuiObject to scale")
+	assert(Handle, "MakeZoomable: needs a Handle GuiObject")
 
 	Handle.Active = true
 
@@ -412,10 +410,10 @@ function UIGesture:MakeZoomable(Main, Handle, Content, MinZoom, MaxZoom, ZoomSte
 	MaxZoom = MaxZoom or 1
 	ZoomStep = ZoomStep or 0.1
 
-	local ContentScale = Content:FindFirstChildOfClass("UIScale")
+	local ContentScale = Main:FindFirstChildOfClass("UIScale")
 	if not ContentScale then
 		ContentScale = Instance.new("UIScale")
-		ContentScale.Parent = Content
+		ContentScale.Parent = Main
 	end
 
 	local function GetFitScale()
@@ -424,14 +422,14 @@ function UIGesture:MakeZoomable(Main, Handle, Content, MinZoom, MaxZoom, ZoomSte
 			currentScale = 1
 		end
 
-		local baseContentSize = Content.AbsoluteSize / currentScale
+		local baseContentSize = Main.AbsoluteSize / currentScale
 		if baseContentSize.X <= 0 or baseContentSize.Y <= 0 then
 			return 1
 		end
 
 		return math.min(
-			Main.AbsoluteSize.X / baseContentSize.X,
-			Main.AbsoluteSize.Y / baseContentSize.Y
+			Handle.AbsoluteSize.X / baseContentSize.X,
+			Handle.AbsoluteSize.Y / baseContentSize.Y
 		)
 	end
 
@@ -451,7 +449,7 @@ function UIGesture:MakeZoomable(Main, Handle, Content, MinZoom, MaxZoom, ZoomSte
 
 		local clampedScale = math.clamp(baseScale * factor, minAllowedScale, maxAllowedScale)
 
-		local anchorScreen = Main.AbsolutePosition + Main.AbsoluteSize / 2
+		local anchorScreen = Handle.AbsolutePosition + Handle.AbsoluteSize / 2
 		local newAbsSize = baseAbsSize * (clampedScale / baseScale)
 
 		local fractionX = (anchorScreen.X - baseAbsPos.X) / baseAbsSize.X
@@ -460,10 +458,10 @@ function UIGesture:MakeZoomable(Main, Handle, Content, MinZoom, MaxZoom, ZoomSte
 		local desiredAbsX = anchorScreen.X - fractionX * newAbsSize.X
 		local desiredAbsY = anchorScreen.Y - fractionY * newAbsSize.Y
 
-		local anchor = Content.AnchorPoint
+		local anchor = Main.AnchorPoint
 		local sizeDelta = newAbsSize - baseAbsSize
 
-		Content.Position = UDim2.new(
+		Main.Position = UDim2.new(
 			basePos.X.Scale,
 			basePos.X.Offset + (desiredAbsX - baseAbsPos.X) + anchor.X * sizeDelta.X,
 			basePos.Y.Scale,
@@ -489,9 +487,9 @@ function UIGesture:MakeZoomable(Main, Handle, Content, MinZoom, MaxZoom, ZoomSte
 			pinching = true
 			StartDistance = (TouchA.Position - TouchB.Position).Magnitude
 			StartScale = ContentScale.Scale
-			StartAbsSize = Content.AbsoluteSize
-			StartPos = Content.Position
-			StartAbsPos = Content.AbsolutePosition
+			StartAbsSize = Main.AbsoluteSize
+			StartPos = Main.Position
+			StartAbsPos = Main.AbsolutePosition
 		end
 	end)
 
@@ -532,7 +530,7 @@ function UIGesture:MakeZoomable(Main, Handle, Content, MinZoom, MaxZoom, ZoomSte
 		local direction = input.Position.Z
 		local factor = 1 + (direction * ZoomStep)
 
-		ApplyZoom(factor, ContentScale.Scale, Content.AbsoluteSize, Content.Position, Content.AbsolutePosition)
+		ApplyZoom(factor, ContentScale.Scale, Main.AbsoluteSize, Main.Position, Main.AbsolutePosition)
 	end)
 
 	function self:Disconnect()
@@ -726,6 +724,15 @@ function UIGesture:MakePannable(Main, Handle, Callback, Config)
 	Conn[4] = { Disconnect = function()
 		InputEndedListeners[OnPanInputEnded] = nil
 	end }
+
+	Conn[5] = Main:GetPropertyChangedSignal("Position"):Connect(function()
+		BasePos = UDim2.new(
+			Main.Position.X.Scale,
+			Main.Position.X.Offset - CurrentOffset.X,
+			Main.Position.Y.Scale,
+			Main.Position.Y.Offset - CurrentOffset.Y
+		)
+	end)
 
 	function self:Disconnect()
 		panning = false
