@@ -664,12 +664,45 @@ function UIGesture:MakePannable(Main, Handle, Callback, Config)
 		end
 	end
 
+	local function FinalizePan()
+		panning = false
+		ActiveInput = nil
+		DragInput = nil
+
+		if Momentum then
+			StopMomentum()
+
+			local velocity = Velocity
+			local offset = CurrentOffset
+
+			MomentumConn = RunService.Heartbeat:Connect(function(dt)
+				velocity = velocity * math.exp(-Friction * dt)
+
+				if velocity.Magnitude < 1 then
+					StopMomentum()
+
+					if ReturnToCenter then
+						CurrentOffset = Vector2.new(0, 0)
+						ApplyPan(CurrentOffset)
+					end
+
+					return
+				end
+
+				offset = ClampOffset(offset + velocity * dt)
+				CurrentOffset = offset
+				ApplyPan(offset)
+			end)
+		elseif ReturnToCenter then
+			CurrentOffset = Vector2.new(0, 0)
+			ApplyPan(CurrentOffset)
+		end
+	end
+
 	Conn[1] = Handle.InputBegan:Connect(function(input)
 		if panning then
 			if input.UserInputType == Enum.UserInputType.Touch and ActiveInput.UserInputType == Enum.UserInputType.Touch then
-				panning = false
-				ActiveInput = nil
-				DragInput = nil
+				FinalizePan()
 			end
 			return
 		end
@@ -717,39 +750,7 @@ function UIGesture:MakePannable(Main, Handle, Callback, Config)
 
 	local function OnPanInputEnded(input)
 		if input ~= ActiveInput then return end
-
-		panning = false
-		ActiveInput = nil
-		DragInput = nil
-
-		if Momentum then
-			StopMomentum()
-
-			local velocity = Velocity
-			local offset = CurrentOffset
-
-			MomentumConn = RunService.Heartbeat:Connect(function(dt)
-				velocity = velocity * math.exp(-Friction * dt)
-
-				if velocity.Magnitude < 1 then
-					StopMomentum()
-
-					if ReturnToCenter then
-						CurrentOffset = Vector2.new(0, 0)
-						ApplyPan(CurrentOffset)
-					end
-
-					return
-				end
-
-				offset = ClampOffset(offset + velocity * dt)
-				CurrentOffset = offset
-				ApplyPan(offset)
-			end)
-		elseif ReturnToCenter then
-			CurrentOffset = Vector2.new(0, 0)
-			ApplyPan(CurrentOffset)
-		end
+		FinalizePan()
 	end
 
 	InputChangedListeners[OnPanInputChanged] = true
