@@ -24,6 +24,7 @@ export type PanConfig = {
 	Momentum: boolean?,
 	Friction: number?,
 	PanButton: Enum.UserInputType?,
+	Normalization: boolean?,
 }
 
 export type UIGesture = {
@@ -33,7 +34,7 @@ export type UIGesture = {
 	MakeRotatable: (self: UIGesture, Main: GuiObject, Handle: GuiObject?) -> GestureHandle,
 	MakeZoomable: (self: UIGesture, Main: GuiObject, Handle: GuiObject, MinZoom: number?, MaxZoom: number?, ZoomStep: number?) -> GestureHandle,
 	MakePannable: (self: UIGesture, Main: GuiObject, Handle: GuiObject?, Callback: PanCallback?, Config: PanConfig?) -> GestureHandle,
-	MakeHoverable: (self: UIGesture, Main: GuiObject, Handle: GuiObject?, Callback: HoverCallback?) -> GestureHandle,
+	MakeHoverable: (self: UIGesture, Main: GuiObject, Handle: GuiObject?, Callback: HoverCallback) -> GestureHandle,
 }
 
 local UIGesture = {} :: UIGesture
@@ -564,6 +565,7 @@ function UIGesture:MakePannable(Main, Handle, Callback, Config)
 	local Friction = Config.Friction or 4
 	local PanButton = Config.PanButton or Enum.UserInputType.MouseButton1
 	local MoveMain = if Config.MoveMain == nil then true else Config.MoveMain
+	local Normalization = Config.Normalization
 
 	assert(not (type(Radius) == "table" and not LockAxis), "MakePannable: Radius table (Min/Max) requires LockAxis to be set")
 
@@ -601,12 +603,22 @@ function UIGesture:MakePannable(Main, Handle, Callback, Config)
 
 		if LockAxis == "X" or LockAxis == "Y" then
 			local value = if LockAxis == "X" then offset.X else offset.Y
+			local handleSize = if LockAxis == "X" then Handle.AbsoluteSize.X else Handle.AbsoluteSize.Y
 			local min, max = -math.huge, math.huge
 
 			if type(Radius) == "table" then
-				min, max = Radius[1] * scale, Radius[2] * scale
+				if Normalization then
+					min, max = Radius[1] * scale + handleSize / 2, Radius[2] * scale - handleSize / 2
+				else
+					min, max = Radius[1] * scale, Radius[2] * scale
+				end
 			elseif Radius then
-				min, max = -Radius * scale, Radius * scale
+				if Normalization then
+					local effective = math.max((Radius * scale - handleSize) / 2, 0)
+					min, max = -effective, effective
+				else
+					min, max = -Radius * scale, Radius * scale
+				end
 			end
 
 			value = math.clamp(value, min, max)
@@ -615,14 +627,31 @@ function UIGesture:MakePannable(Main, Handle, Callback, Config)
 		end
 
 		if typeof(Radius) == "Vector2" then
+			if Normalization then
+				local effectiveX = math.max((Radius.X * scale - Handle.AbsoluteSize.X) / 2, 0)
+				local effectiveY = math.max((Radius.Y * scale - Handle.AbsoluteSize.Y) / 2, 0)
+
+				return Vector2.new(
+					math.clamp(offset.X, -effectiveX, effectiveX),
+					math.clamp(offset.Y, -effectiveY, effectiveY)
+				)
+			end
+
 			return Vector2.new(
 				math.clamp(offset.X, -Radius.X * scale, Radius.X * scale),
 				math.clamp(offset.Y, -Radius.Y * scale, Radius.Y * scale)
 			)
 		end
 
-		if Radius and offset.Magnitude > Radius * scale then
-			offset = offset.Unit * (Radius * scale)
+		if Radius then
+			if Normalization then
+				local effectiveRadius = math.max((Radius * scale - Handle.AbsoluteSize.Magnitude) / 2, 0)
+				if offset.Magnitude > effectiveRadius then
+					offset = offset.Unit * effectiveRadius
+				end
+			elseif offset.Magnitude > Radius * scale then
+				offset = offset.Unit * (Radius * scale)
+			end
 		end
 
 		return offset
