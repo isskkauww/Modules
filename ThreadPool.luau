@@ -25,7 +25,7 @@
 
 export type ThreadPool = {
 	free: { thread },
-	Spawn: <A...>(self: ThreadPool, fn: (A...) -> (), ...: A...) -> (),
+	Spawn: (self: ThreadPool, fn: (...any) -> (), ...: any) -> (),
 	Prewarm: (self: ThreadPool, amount: number) -> (),
 	Clear: (self: ThreadPool) -> (),
 	Destroy: (self: ThreadPool) -> (),
