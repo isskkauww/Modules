@@ -62,7 +62,7 @@ function UIGesture:MakeDraggable(Main, Handle)
 	Handle.Active = true
 
 	local dragging = false
-	local ActiveInput, DragInput, DragStart, StartPos, StartAbsPos
+	local ActiveInput, DragInput, DragStart, StartPos, HandleStartAbsPos
 
 	local Conn = {}
 	local self = {}
@@ -77,7 +77,7 @@ function UIGesture:MakeDraggable(Main, Handle)
 			ActiveInput = input
 			DragStart = input.Position
 			StartPos = Main.Position
-			StartAbsPos = Main.AbsolutePosition
+			HandleStartAbsPos = Handle.AbsolutePosition
 		end
 	end)
 
@@ -93,24 +93,25 @@ function UIGesture:MakeDraggable(Main, Handle)
 		if dragging and input == DragInput then
 
 			local delta = input.Position - DragStart
-			local desiredAbsX = StartAbsPos.X + delta.X
-			local desiredAbsY = StartAbsPos.Y + delta.Y
+			local desiredHandleAbsX = HandleStartAbsPos.X + delta.X
+			local desiredHandleAbsY = HandleStartAbsPos.Y + delta.Y
 
 			local viewportSize = Camera.ViewportSize
 
-			local minX = 0
-			local minY = -GuiService:GetGuiInset().Y
-			local maxX = viewportSize.X - Main.AbsoluteSize.X
-			local maxY = viewportSize.Y - Main.AbsoluteSize.Y
+			local guiInset = GuiService:GetGuiInset().Y
+			local minX = 20 - Handle.AbsoluteSize.X
+			local minY = 20 - Handle.AbsoluteSize.Y - guiInset
+			local maxX = viewportSize.X - 20
+			local maxY = viewportSize.Y - guiInset - 20
 
-			local clampedAbsX = (minX > maxX) and minX or math.clamp(desiredAbsX, minX, maxX)
-			local clampedAbsY = (minY > maxY) and minY or math.clamp(desiredAbsY, minY, maxY)
+			local clampedHandleAbsX = (minX > maxX) and minX or math.clamp(desiredHandleAbsX, minX, maxX)
+			local clampedHandleAbsY = (minY > maxY) and minY or math.clamp(desiredHandleAbsY, minY, maxY)
 
 			Main.Position = UDim2.new(
 				StartPos.X.Scale,
-				StartPos.X.Offset + (clampedAbsX - StartAbsPos.X),
+				StartPos.X.Offset + (clampedHandleAbsX - HandleStartAbsPos.X),
 				StartPos.Y.Scale,
-				StartPos.Y.Offset + (clampedAbsY - StartAbsPos.Y)
+				StartPos.Y.Offset + (clampedHandleAbsY - HandleStartAbsPos.Y)
 			)
 		end
 	end
