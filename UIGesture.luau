@@ -99,10 +99,10 @@ function UIGesture:MakeDraggable(Main, Handle)
 			local viewportSize = Camera.ViewportSize
 
 			local guiInset = GuiService:GetGuiInset().Y
-			local minX = 40 - Handle.AbsoluteSize.X
-			local minY = 40 - Handle.AbsoluteSize.Y - guiInset
-			local maxX = viewportSize.X - 40
-			local maxY = viewportSize.Y - guiInset - 40
+			local minX = 80 - Handle.AbsoluteSize.X
+			local minY = 80 - Handle.AbsoluteSize.Y - guiInset
+			local maxX = viewportSize.X - 80
+			local maxY = viewportSize.Y - guiInset - 80
 
 			local clampedAbsX = (minX > maxX) and minX or math.clamp(desiredAbsX, minX, maxX)
 			local clampedAbsY = (minY > maxY) and minY or math.clamp(desiredAbsY, minY, maxY)
