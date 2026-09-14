@@ -31,7 +31,7 @@ local function NewInstance(ClassName, Props)
 	return Inst
 end
 
-local IconsLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/isskkauww/Modules/refs/heads/main/Icons.luau"))()
+local IconsLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/Footagesus/Icons/refs/heads/main/Main-v2.lua"))()
 
 local function GetAsset(IconName)
 	if type(IconName) ~= "string" or IconName == "" then
@@ -163,12 +163,12 @@ local function PlayFrameTween(Data, Props, Duration, Style, Direction)
 	return PlayingTween, Data.positionToken
 end
 
-local function RepositionAll()
+local function RepositionAll(ExcludeData)
 	local TotalOffset = 0
 	for I, Data in ipairs(ActiveNotifs) do
 		local FrameHeight = Data and Data.frameHeight or 84
 		local Pos = GetBaseXY(FrameHeight, TotalOffset)
-		if Data and Data.frame and Data.frame.Parent and not Data.dismissed then
+		if Data ~= ExcludeData and Data and Data.frame and Data.frame.Parent and not Data.dismissed then
 			PlayFrameTween(Data, { Position = Pos }, 0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
 		end
 		TotalOffset = TotalOffset + FrameHeight + 8
@@ -262,7 +262,16 @@ local function CreateNotifyScreenGui()
 end
 CreateNotifyScreenGui()
 
-local function Notify(Config)
+export type NotifyConfig = {
+	Title: string?,
+	Desc: string?,
+	Description: string?,
+	Duration: number?,
+	CanClose: boolean?,
+	Icon: string?,
+}
+
+local function Notify(Config: NotifyConfig?)
 	if not (NotifyScreenGui and NotifyScreenGui.Parent) then
 		warn("notify ScreenGui unavailable")
 		return nil
@@ -425,7 +434,8 @@ local function Notify(Config)
 	table.insert(TextTargets, TextLabel)
 
 	local Data = { frame = Frame, frameHeight = FrameHeight, dismissed = false, paused = false, remaining = Duration, duration = Duration, positionTween = nil, positionToken = 0, dismissTween = nil }
-	table.insert(ActiveNotifs, Data)
+	table.insert(ActiveNotifs, 1, Data)
+	RepositionAll(Data)
 
 	CloseBtn.Activated:Connect(function()
 		if not CanClose then return end
@@ -967,7 +977,7 @@ local function Notify(Config)
 	})
 	NewInstance("UICorner", { Parent = ProgressBar, CornerRadius = UDim.new(1, 0) })
 
-	local TargetPos = GetSlotPos(#ActiveNotifs)
+	local TargetPos = GetSlotPos(1)
 	local OvershootSign = (CurrentPositionOption.XSide == "left") and 1 or -1
 	local BounceOver = UDim2.new(TargetPos.X.Scale, TargetPos.X.Offset + OvershootSign * 12, TargetPos.Y.Scale, TargetPos.Y.Offset)
 
