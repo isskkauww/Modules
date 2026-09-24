@@ -12,9 +12,11 @@ export type SwipeDirection = "Left" | "Right" | "Up" | "Down"
 
 export type SwipeCallback = (direction: SwipeDirection, distance: number) -> ()
 
-export type PanCallback = (delta: Vector2, magnitude: number) -> ()
+export type PanCallback = (delta: Vector2, magnitude: number, Dragging: boolean) -> ()
 
 export type HoverCallback = (Hovering: boolean) -> ()
+
+export type DragCallback = (Dragging: boolean) -> ()
 
 export type PanConfig = {
 	Radius: (number | Vector2 | {number})?,
@@ -29,12 +31,12 @@ export type PanConfig = {
 }
 
 export type UIGesture = {
-	MakeDraggable: (self: UIGesture, Main: GuiObject, Handle: GuiObject?) -> GestureHandle,
-	MakeResizeable: (self: UIGesture, Main: GuiObject, Handle: GuiObject?, MinSize: Vector2?, MaxSize: Vector2?) -> GestureHandle,
+	MakeDraggable: (self: UIGesture, Main: GuiObject, Handle: GuiObject?, Fn: DragCallback?) -> GestureHandle,
+	MakeResizeable: (self: UIGesture, Main: GuiObject, Handle: GuiObject?, MinSize: Vector2?, MaxSize: Vector2?, Fn: DragCallback?) -> GestureHandle,
 	MakeSwipeable: (self: UIGesture, Main: GuiObject, Handle: GuiObject?, Callback: SwipeCallback?, Threshold: number?, MaxTime: number?, Direction: (SwipeDirection | {SwipeDirection})?) -> GestureHandle,
-	MakeRotatable: (self: UIGesture, Main: GuiObject, Handle: GuiObject?) -> GestureHandle,
-	MakeZoomable: (self: UIGesture, Main: GuiObject, Handle: GuiObject, MinZoom: number?, MaxZoom: number?, ZoomStep: number?) -> GestureHandle,
-	MakePannable: (self: UIGesture, Main: GuiObject, Handle: GuiObject?, Callback: PanCallback?, Config: PanConfig?) -> GestureHandle,
+	MakeRotatable: (self: UIGesture, Main: GuiObject, Handle: GuiObject?, Fn: DragCallback?) -> GestureHandle,
+	MakeZoomable: (self: UIGesture, Main: GuiObject, Handle: GuiObject, MinZoom: number?, MaxZoom: number?, ZoomStep: number?, Fn: DragCallback?) -> GestureHandle,
+	MakePannable: (self: UIGesture, Main: GuiObject, Handle: GuiObject?, Fn: PanCallback?, Config: PanConfig?) -> GestureHandle,
 	MakeHoverable: (self: UIGesture, Main: GuiObject, Handle: GuiObject?, Callback: HoverCallback) -> GestureHandle,
 }
 
@@ -55,7 +57,7 @@ UserInputService.InputEnded:Connect(function(input)
 	end
 end)
 
-function UIGesture:MakeDraggable(Main, Handle)
+function UIGesture:MakeDraggable(Main, Handle, Fn)
 	Main = Main or Handle
 	Handle = Handle or Main
 	assert(Main, "MakeDraggable: needs at least one GuiObject")
@@ -79,6 +81,10 @@ function UIGesture:MakeDraggable(Main, Handle)
 			DragStart = input.Position
 			StartPos = Main.Position
 			StartAbsPos = Handle.AbsolutePosition
+
+			if Fn then
+				Fn(true)
+			end
 		end
 	end)
 
@@ -122,6 +128,10 @@ function UIGesture:MakeDraggable(Main, Handle)
 			dragging = false
 			ActiveInput = nil
 			DragInput = nil
+
+			if Fn then
+				Fn(false)
+			end
 		end
 	end
 
@@ -147,7 +157,7 @@ function UIGesture:MakeDraggable(Main, Handle)
 	return self
 end
 
-function UIGesture:MakeResizeable(Main, Handle, MinSize, MaxSize)
+function UIGesture:MakeResizeable(Main, Handle, MinSize, MaxSize, Fn)
 	Main = Main or Handle
 	Handle = Handle or Main
 	assert(Main, "MakeResizeable: needs at least one GuiObject")
@@ -175,6 +185,10 @@ function UIGesture:MakeResizeable(Main, Handle, MinSize, MaxSize)
 			StartSize = Main.Size
 			StartAbsSize = Main.AbsoluteSize
 			StartAbsPos = Main.AbsolutePosition
+
+			if Fn then
+				Fn(true)
+			end
 		end
 	end)
 
@@ -215,6 +229,10 @@ function UIGesture:MakeResizeable(Main, Handle, MinSize, MaxSize)
 			resizing = false
 			ActiveInput = nil
 			DragInput = nil
+
+			if Fn then
+				Fn(false)
+			end
 		end
 	end
 
@@ -326,7 +344,7 @@ function UIGesture:MakeSwipeable(Main, Handle, Callback, Threshold, MaxTime, Dir
 	return self
 end
 
-function UIGesture:MakeRotatable(Main, Handle)
+function UIGesture:MakeRotatable(Main, Handle, Fn)
 	Main = Main or Handle
 	Handle = Handle or Main
 	assert(Main, "MakeRotatable: needs at least one GuiObject")
@@ -355,6 +373,10 @@ function UIGesture:MakeRotatable(Main, Handle)
 			ActiveInput = input
 			StartAngle = GetAngle(input.Position)
 			StartRotation = Main.Rotation
+
+			if Fn then
+				Fn(true)
+			end
 		end
 	end)
 
@@ -378,6 +400,10 @@ function UIGesture:MakeRotatable(Main, Handle)
 			rotating = false
 			ActiveInput = nil
 			DragInput = nil
+
+			if Fn then
+				Fn(false)
+			end
 		end
 	end
 
@@ -403,7 +429,7 @@ function UIGesture:MakeRotatable(Main, Handle)
 	return self
 end
 
-function UIGesture:MakeZoomable(Main, Handle, MinZoom, MaxZoom, ZoomStep)
+function UIGesture:MakeZoomable(Main, Handle, MinZoom, MaxZoom, ZoomStep, Fn)
 	assert(Main, "MakeZoomable: needs a GuiObject to scale")
 	assert(Handle, "MakeZoomable: needs a Handle GuiObject")
 
@@ -496,16 +522,28 @@ function UIGesture:MakeZoomable(Main, Handle, MinZoom, MaxZoom, ZoomStep)
 			StartAbsSize = Main.AbsoluteSize
 			StartPos = Main.Position
 			StartAbsPos = Main.AbsolutePosition
+
+			if Fn then
+				Fn(true)
+			end
 		end
 	end)
 
 	local function OnZoomInputEnded(input)
+		if input ~= TouchA and input ~= TouchB then return end
+
 		if input == TouchA then
 			TouchA = nil
-			pinching = false
-		elseif input == TouchB then
+		else
 			TouchB = nil
+		end
+
+		if pinching then
 			pinching = false
+
+			if Fn then
+				Fn(false)
+			end
 		end
 	end
 
@@ -551,7 +589,7 @@ function UIGesture:MakeZoomable(Main, Handle, MinZoom, MaxZoom, ZoomStep)
 	return self
 end
 
-function UIGesture:MakePannable(Main, Handle, Callback, Config)
+function UIGesture:MakePannable(Main, Handle, Fn, Config)
 	Main = Main or Handle
 	Handle = Handle or Main
 	assert(Main, "MakePannable: needs at least one GuiObject")
@@ -592,8 +630,8 @@ function UIGesture:MakePannable(Main, Handle, Callback, Config)
 			)
 		end
 
-		if Callback then
-			Callback(offset, offset.Magnitude)
+		if Fn then
+			Fn(offset, offset.Magnitude, panning)
 		end
 	end
 
@@ -688,6 +726,10 @@ function UIGesture:MakePannable(Main, Handle, Callback, Config)
 			LastSampleTime = os.clock()
 			Velocity = Vector2.new(0, 0)
 
+			if Fn then
+				Fn(CurrentOffset, CurrentOffset.Magnitude, true)
+			end
+
 			if ClickToJump then
 				local ZeroAbsolutePos = if MoveMain then Main.AbsolutePosition - CurrentOffset else Main.AbsolutePosition
 				local JumpOffset = ClampOffset(Vector2.new(input.Position.X, input.Position.Y) - ZeroAbsolutePos)
@@ -731,6 +773,10 @@ function UIGesture:MakePannable(Main, Handle, Callback, Config)
 		panning = false
 		ActiveInput = nil
 		DragInput = nil
+
+		if Fn then
+			Fn(CurrentOffset, CurrentOffset.Magnitude, false)
+		end
 
 		if Momentum then
 			StopMomentum()
