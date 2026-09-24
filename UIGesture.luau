@@ -25,6 +25,7 @@ export type PanConfig = {
 	Friction: number?,
 	PanButton: Enum.UserInputType?,
 	Normalization: boolean?,
+	ClickToJump: boolean?,
 }
 
 export type UIGesture = {
@@ -567,6 +568,7 @@ function UIGesture:MakePannable(Main, Handle, Callback, Config)
 	local PanButton = Config.PanButton or Enum.UserInputType.MouseButton1
 	local MoveMain = if Config.MoveMain == nil then true else Config.MoveMain
 	local Normalization = Config.Normalization
+	local ClickToJump = Config.ClickToJump or false
 
 	assert(not (type(Radius) == "table" and not LockAxis), "MakePannable: Radius table (Min/Max) requires LockAxis to be set")
 
@@ -685,6 +687,16 @@ function UIGesture:MakePannable(Main, Handle, Callback, Config)
 			LastOffset = CurrentOffset
 			LastSampleTime = os.clock()
 			Velocity = Vector2.new(0, 0)
+
+			if ClickToJump then
+				local ZeroAbsolutePos = if MoveMain then Main.AbsolutePosition - CurrentOffset else Main.AbsolutePosition
+				local JumpOffset = ClampOffset(Vector2.new(input.Position.X, input.Position.Y) - ZeroAbsolutePos)
+
+				DragStartOffset = JumpOffset
+				LastOffset = JumpOffset
+				CurrentOffset = JumpOffset
+				ApplyPan(JumpOffset)
+			end
 		end
 	end)
 
