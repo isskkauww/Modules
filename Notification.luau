@@ -474,7 +474,7 @@ local function Notify(Config: NotifyConfig?)
 	end
 
 	TitleLabel.Parent = Frame
-	TitleLabel.Size = UDim2.new(1, -176, 0, 0)
+	TitleLabel.Size = UDim2.new(0, 320 - 176, 0, 0)
 	TitleLabel.Position = UDim2.new(0, 64, 0, 18 + (HeaderHeight - TitleHeight) / 2)
 	TitleLabel.ZIndex = 12
 	TitleLabel.Visible = true
