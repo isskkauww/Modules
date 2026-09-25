@@ -31,7 +31,49 @@ local function NewInstance(ClassName, Props)
 	return Inst
 end
 
-local IconsLib = loadstring(game:HttpGet("https://raw.githubusercontent.com/Footagesus/Icons/refs/heads/main/Main-v2.lua"))()
+local function Load(Url, Name)
+	local Loader = (type(loadstring) == "function" and loadstring) or (type(load) == "function" and load)
+
+	if not Loader then
+		error("load/loadstring not supported, get a better executor.")
+	end
+
+	local ReqFn = (type(request) == "function" and request) or (type(http_request) == "function" and http_request) or (type(syn) == "table" and type(syn.request) == "function" and syn.request) or (type(http) == "table" and type(http.request) == "function" and http.request)
+
+	local Body
+	while not Body do
+		Body = (function()
+			if type(game.HttpGet) == "function" then
+				return game:HttpGet(Url)
+			end
+
+			if type(HttpService.GetAsync) == "function" then
+				return HttpService:GetAsync(Url)
+			end
+
+			if ReqFn then
+				local Res = ReqFn({ Url = Url, Method = "GET" })
+				if Res and Res.Body then return Res.Body end
+			end
+
+			return nil
+		end)()
+
+		if not Body then
+			warn("HTTP fetch failed for " .. Name .. ", retrying in 2s...")
+			task.wait(2)
+		end
+	end
+
+	local Chunk, CompileErr = Loader(Body)
+	if not Chunk then
+		return nil, "Failed to compile " .. Name .. ": " .. tostring(CompileErr)
+	end
+
+	return Chunk()
+end
+
+local IconsLib = Load("https://pastefy.app/Kgh909VG/raw", "IconsLib")
 
 local function GetAsset(IconName)
 	if type(IconName) ~= "string" or IconName == "" then
@@ -122,7 +164,7 @@ end
 local function SaveSettings()
 	if not FileSystemApiSupport then return end
 	pcall(function()
-		writefile("Noname/Notification_Settings.json", HttpService:JSONEncode({ Font = CurrentFontName, Position = CurrentPositionOption.Name }))
+		writefile("Notification_Settings.json", HttpService:JSONEncode({ Font = CurrentFontName, Position = CurrentPositionOption.Name }))
 	end)
 end
 
@@ -211,14 +253,11 @@ local function DismissNotif(Frame, Data)
 end
 
 if FileSystemApiSupport then
-	if not isfolder("Noname") then
-		makefolder("Noname")
-	end
-	if not isfile("Noname/Notification_Settings.json") then
+	if not isfile("Notification_Settings.json") then
 		SaveSettings()
 	else
 		local Ok, Decoded = pcall(function()
-			return HttpService:JSONDecode(readfile("Noname/Notification_Settings.json"))
+			return HttpService:JSONDecode(readfile("Notification_Settings.json"))
 		end)
 		if Ok and type(Decoded) == "table" then
 			if type(Decoded.Font) == "string" then
@@ -318,9 +357,35 @@ local function Notify(Config: NotifyConfig?)
 		TextYAlignment = Enum.TextYAlignment.Top,
 		TextWrapped = true,
 	})
+
+	local HasDesc = Text ~= ""
+
+	local TitleLabel = NewInstance("TextLabel", {
+		Parent = NotifyScreenGui,
+		Size = UDim2.new(0, 320 - 176, 0, 0),
+		AutomaticSize = Enum.AutomaticSize.Y,
+		BackgroundTransparency = 1,
+		Visible = false,
+		Text = Title,
+		TextColor3 = Color3.fromRGB(255, 255, 255),
+		TextSize = 13,
+		Font = CurrentFont,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextYAlignment = Enum.TextYAlignment.Top,
+		TextWrapped = true,
+		TextTruncate = Enum.TextTruncate.None,
+	})
+
 	RunService.Heartbeat:Wait()
 	local TextHeight = math.max(11 + 2, TextLabel.AbsoluteSize.Y)
-	local FrameHeight = 38 + TextHeight + 22
+	local TitleHeight = math.max(16, TitleLabel.AbsoluteSize.Y)
+	local HeaderHeight = math.max(TitleHeight, 36)
+	local FrameHeight
+	if HasDesc then
+		FrameHeight = 18 + HeaderHeight + 4 + TextHeight + 22
+	else
+		FrameHeight = 18 + HeaderHeight + 22
+	end
 
 	local StartXScale, StartXOffset = GetOffscreenX()
 	local StartSlot = GetBaseXY(FrameHeight, 0)
@@ -368,7 +433,7 @@ local function Notify(Config: NotifyConfig?)
 	local IconFrame = NewInstance("Frame", {
 		Parent = Frame,
 		Size = UDim2.new(0, 36, 0, 36),
-		Position = UDim2.new(0, 20, 0, 18),
+		Position = UDim2.new(0, 20, 0, 18 + (HeaderHeight - 36) / 2),
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
 		ZIndex = 11,
@@ -408,29 +473,19 @@ local function Notify(Config: NotifyConfig?)
 		end)
 	end
 
-	local TitleLabel = NewInstance("TextLabel", {
-		Parent = Frame,
-		Size = UDim2.new(1, -176, 0, 16),
-		Position = UDim2.new(0, 64, 0, 18),
-		BackgroundTransparency = 1,
-		Text = Title,
-		TextColor3 = Color3.fromRGB(255, 255, 255),
-		TextSize = 13,
-		Font = CurrentFont,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		TextYAlignment = Enum.TextYAlignment.Center,
-		TextWrapped = false,
-		TextTruncate = Enum.TextTruncate.AtEnd,
-		ZIndex = 12,
-	})
+	TitleLabel.Parent = Frame
+	TitleLabel.Size = UDim2.new(1, -176, 0, 0)
+	TitleLabel.Position = UDim2.new(0, 64, 0, 18 + (HeaderHeight - TitleHeight) / 2)
+	TitleLabel.ZIndex = 12
+	TitleLabel.Visible = true
 	table.insert(TextTargets, TitleLabel)
 
 	TextLabel.Parent = Frame
 	TextLabel.Size = UDim2.new(1, -84, 0, 0)
-	TextLabel.Position = UDim2.new(0, 64, 0, 38)
+	TextLabel.Position = UDim2.new(0, 64, 0, 18 + HeaderHeight + 4)
 	TextLabel.TextColor3 = Color3.fromRGB(140, 140, 140)
 	TextLabel.ZIndex = 12
-	TextLabel.Visible = true
+	TextLabel.Visible = HasDesc
 	table.insert(TextTargets, TextLabel)
 
 	local Data = { frame = Frame, frameHeight = FrameHeight, dismissed = false, paused = false, remaining = Duration, duration = Duration, positionTween = nil, positionToken = 0, dismissTween = nil }
