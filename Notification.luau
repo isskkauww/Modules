@@ -322,10 +322,7 @@ local function Notify(Config: NotifyConfig?)
 	do
 		local Value = Config.Title or "Notification"
 		if type(Value) ~= "string" then Value = tostring(Value) end
-		Value = Value:gsub("\r\n", " "):gsub("\n", " "):gsub("\r", " ")
-		Value = Value:gsub("%s+", " ")
-		Value = Value:gsub("^%s+", ""):gsub("%s+$", "")
-		Title = Value
+		Title = (Value:gsub("\r\n", "\n"):gsub("\r", "\n"))
 	end
 
 	local Text
