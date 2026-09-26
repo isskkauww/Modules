@@ -343,6 +343,22 @@ local function Notify(Config: NotifyConfig?)
 
 	local TextTargets = {}
 
+	local WrappedTitleLines = {}
+	for Paragraph in (Title .. "\n"):gmatch("(.-)\n") do
+		local CurrentLine = ""
+		for Word in Paragraph:gmatch("%S+") do
+			local Candidate = CurrentLine == "" and Word or (CurrentLine .. " " .. Word)
+			if CurrentLine ~= "" and TextService:GetTextSize(Candidate, 13, CurrentFont, Vector2.new(math.huge, math.huge)).X > (320 - 176) then
+				table.insert(WrappedTitleLines, CurrentLine)
+				CurrentLine = Word
+			else
+				CurrentLine = Candidate
+			end
+		end
+		table.insert(WrappedTitleLines, CurrentLine)
+	end
+	Title = table.concat(WrappedTitleLines, "\n")
+
 	local TextBoundsSize = TextService:GetTextSize(Text, 11, CurrentFont, Vector2.new(320 - 84, math.huge))
 	local TextLabel = NewInstance("TextLabel", {
 		Parent = NotifyScreenGui,
@@ -357,7 +373,7 @@ local function Notify(Config: NotifyConfig?)
 		TextWrapped = true,
 	})
 	local TextHeight = math.max(11 + 2, TextBoundsSize.Y)
-	local TitleBoundsSize = TextService:GetTextSize(Title, 13, CurrentFont, Vector2.new(320 - 176, math.huge))
+	local TitleBoundsSize = TextService:GetTextSize(Title, 13, CurrentFont, Vector2.new(math.huge, math.huge))
 	local TitleHeight = math.max(16, TitleBoundsSize.Y)
 
 	local TitleY, DescY, FrameHeight
@@ -467,8 +483,7 @@ local function Notify(Config: NotifyConfig?)
 		TextSize = 13,
 		Font = CurrentFont,
 		TextXAlignment = Enum.TextXAlignment.Left,
-		TextYAlignment = Enum.TextYAlignment.Top,
-		TextWrapped = true,
+		TextYAlignment = Enum.TextYAlignment.Center,
 		ZIndex = 12,
 	})
 	table.insert(TextTargets, TitleLabel)
