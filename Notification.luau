@@ -467,7 +467,7 @@ local function Notify(Config: NotifyConfig?)
 		TextSize = 13,
 		Font = CurrentFont,
 		TextXAlignment = Enum.TextXAlignment.Left,
-		TextYAlignment = Enum.TextYAlignment.Center,
+		TextYAlignment = Enum.TextYAlignment.Top,
 		TextWrapped = true,
 		ZIndex = 12,
 	})
