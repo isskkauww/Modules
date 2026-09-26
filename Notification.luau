@@ -3,6 +3,7 @@ local TweenService = cloneref(game:GetService("TweenService"))
 local Players = cloneref(game:GetService("Players"))
 local RunService = cloneref(game:GetService("RunService"))
 local HttpService = cloneref(game:GetService("HttpService"))
+local TextService = cloneref(game:GetService("TextService"))
 
 local FileSystemApiSupport = (writefile and readfile and isfile and makefolder and isfolder) and true or false
 
@@ -333,6 +334,7 @@ local function Notify(Config: NotifyConfig?)
 		if type(Value) ~= "string" then Value = tostring(Value) end
 		Text = (Value:gsub("\r\n", "\n"):gsub("\r", "\n"))
 	end
+	local HasDesc = Text ~= nil and Text ~= ""
 
 	local Duration = Config.Duration or 4
 	if type(Duration) ~= "number" or Duration ~= Duration or Duration < 0 or Duration == math.huge or Duration == -math.huge then Duration = 4 end
@@ -344,10 +346,10 @@ local function Notify(Config: NotifyConfig?)
 
 	local TextTargets = {}
 
+	local TextBoundsSize = TextService:GetTextSize(Text, 11, CurrentFont, Vector2.new(320 - 84, math.huge))
 	local TextLabel = NewInstance("TextLabel", {
 		Parent = NotifyScreenGui,
-		Size = UDim2.new(0, 320 - 84, 0, 0),
-		AutomaticSize = Enum.AutomaticSize.Y,
+		Size = UDim2.new(0, 320 - 84, 0, TextBoundsSize.Y),
 		BackgroundTransparency = 1,
 		Visible = false,
 		Text = Text,
@@ -357,34 +359,19 @@ local function Notify(Config: NotifyConfig?)
 		TextYAlignment = Enum.TextYAlignment.Top,
 		TextWrapped = true,
 	})
+	local TextHeight = math.max(11 + 2, TextBoundsSize.Y)
+	local TitleBoundsSize = TextService:GetTextSize(Title, 13, CurrentFont, Vector2.new(320 - 176, math.huge))
+	local TitleHeight = math.max(16, TitleBoundsSize.Y)
 
-	local HasDesc = Text ~= ""
-
-	local TitleLabel = NewInstance("TextLabel", {
-		Parent = NotifyScreenGui,
-		Size = UDim2.new(0, 320 - 176, 0, 0),
-		AutomaticSize = Enum.AutomaticSize.Y,
-		BackgroundTransparency = 1,
-		Visible = false,
-		Text = Title,
-		TextColor3 = Color3.fromRGB(255, 255, 255),
-		TextSize = 13,
-		Font = CurrentFont,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		TextYAlignment = Enum.TextYAlignment.Top,
-		TextWrapped = true,
-		TextTruncate = Enum.TextTruncate.None,
-	})
-
-	RunService.Heartbeat:Wait()
-	local TextHeight = math.max(11 + 2, TextLabel.AbsoluteSize.Y)
-	local TitleHeight = math.max(16, TitleLabel.AbsoluteSize.Y)
-	local HeaderHeight = math.max(TitleHeight, 36)
-	local FrameHeight
+	local TitleY, DescY, FrameHeight
 	if HasDesc then
-		FrameHeight = 18 + HeaderHeight + 4 + TextHeight + 22
+		TitleY = 18
+		DescY = TitleY + TitleHeight + 4
+		FrameHeight = DescY + TextHeight + 22
 	else
-		FrameHeight = 18 + HeaderHeight + 22
+		FrameHeight = math.max(73, TitleHeight + 40)
+		TitleY = (FrameHeight - TitleHeight) / 2
+		DescY = TitleY + TitleHeight + 4
 	end
 
 	local StartXScale, StartXOffset = GetOffscreenX()
@@ -433,7 +420,7 @@ local function Notify(Config: NotifyConfig?)
 	local IconFrame = NewInstance("Frame", {
 		Parent = Frame,
 		Size = UDim2.new(0, 36, 0, 36),
-		Position = UDim2.new(0, 20, 0, 18 + (HeaderHeight - 36) / 2),
+		Position = UDim2.new(0, 20, 0, 18),
 		BackgroundTransparency = 1,
 		BorderSizePixel = 0,
 		ZIndex = 11,
@@ -473,16 +460,25 @@ local function Notify(Config: NotifyConfig?)
 		end)
 	end
 
-	TitleLabel.Parent = Frame
-	TitleLabel.Size = UDim2.new(0, 320 - 176, 0, 0)
-	TitleLabel.Position = UDim2.new(0, 64, 0, 18 + (HeaderHeight - TitleHeight) / 2)
-	TitleLabel.ZIndex = 12
-	TitleLabel.Visible = true
+	local TitleLabel = NewInstance("TextLabel", {
+		Parent = Frame,
+		Size = UDim2.new(1, -176, 0, TitleHeight),
+		Position = UDim2.new(0, 64, 0, TitleY),
+		BackgroundTransparency = 1,
+		Text = Title,
+		TextColor3 = Color3.fromRGB(255, 255, 255),
+		TextSize = 13,
+		Font = CurrentFont,
+		TextXAlignment = Enum.TextXAlignment.Left,
+		TextYAlignment = Enum.TextYAlignment.Center,
+		TextWrapped = true,
+		ZIndex = 12,
+	})
 	table.insert(TextTargets, TitleLabel)
 
 	TextLabel.Parent = Frame
 	TextLabel.Size = UDim2.new(1, -84, 0, 0)
-	TextLabel.Position = UDim2.new(0, 64, 0, 18 + HeaderHeight + 4)
+	TextLabel.Position = UDim2.new(0, 64, 0, DescY)
 	TextLabel.TextColor3 = Color3.fromRGB(140, 140, 140)
 	TextLabel.ZIndex = 12
 	TextLabel.Visible = HasDesc
