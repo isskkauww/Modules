@@ -6,6 +6,7 @@ local Camera = workspace.CurrentCamera
 
 export type GestureHandle = {
 	Disconnect: (self: GestureHandle) -> (),
+	SetLocked: ((self: GestureHandle, Locked: boolean) -> ())?,
 }
 
 export type SwipeDirection = "Left" | "Right" | "Up" | "Down"
@@ -65,13 +66,34 @@ function UIGesture:MakeDraggable(Main, Handle, Fn)
 	Handle.Active = true
 
 	local dragging = false
+	local Locked = false
 	local ActiveInput, DragInput, DragStart, StartPos, StartAbsPos
 
 	local Conn = {}
 	local self = {}
 
+	local ScaleList = {}
+	local Ancestor = Main.Parent
+	while Ancestor do
+		local Found = Ancestor:FindFirstChildOfClass("UIScale")
+		if Found then
+			table.insert(ScaleList, Found)
+		end
+		Ancestor = Ancestor.Parent
+	end
+
+	local function GetTotalScale()
+		local Total = 1
+		for _, UiScale in ScaleList do
+			Total *= UiScale.Scale
+		end
+		return Total
+	end
+
+	local LastScale = GetTotalScale()
+
 	Conn[1] = Handle.InputBegan:Connect(function(input)
-		if dragging then return end
+		if dragging or Locked then return end
 		if input.UserInputState ~= Enum.UserInputState.Begin then return end
 
 		if input.UserInputType == Enum.UserInputType.MouseButton1
@@ -116,9 +138,9 @@ function UIGesture:MakeDraggable(Main, Handle, Fn)
 
 			Main.Position = UDim2.new(
 				StartPos.X.Scale,
-				StartPos.X.Offset + (clampedAbsX - StartAbsPos.X),
+				StartPos.X.Offset + (clampedAbsX - StartAbsPos.X) / GetTotalScale(),
 				StartPos.Y.Scale,
-				StartPos.Y.Offset + (clampedAbsY - StartAbsPos.Y)
+				StartPos.Y.Offset + (clampedAbsY - StartAbsPos.Y) / GetTotalScale()
 			)
 		end
 	end
@@ -145,6 +167,24 @@ function UIGesture:MakeDraggable(Main, Handle, Fn)
 	Conn[4] = { Disconnect = function()
 		InputEndedListeners[OnDragInputEnded] = nil
 	end }
+
+	for _, UiScale in ScaleList do
+		table.insert(Conn, UiScale:GetPropertyChangedSignal("Scale"):Connect(function()
+			local NewScale = GetTotalScale()
+			Main.Position = UDim2.new(
+				Main.Position.X.Scale,
+				Main.Position.X.Offset * LastScale / NewScale,
+				Main.Position.Y.Scale,
+				Main.Position.Y.Offset * LastScale / NewScale
+			)
+			LastScale = NewScale
+		end))
+	end
+
+	function self:SetLocked(Value)
+		Locked = Value
+		dragging = false
+	end
 
 	function self:Disconnect()
 		dragging = false
